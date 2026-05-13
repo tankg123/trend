@@ -1,0 +1,27 @@
+{
+  "name": "youtube-channel-dashboard-backend",
+  "version": "1.0.0",
+  "description": "Backend API for YouTube Channel Dashboard",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "axios": "latest",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "latest",
+    "cors": "latest",
+    "dotenv": "latest",
+    "exceljs": "^4.4.0",
+    "express": "latest",
+    "helmet": "latest",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "latest",
+    "pdfkit": "^0.18.0"
+  },
+  "devDependencies": {
+    "nodemon": "latest"
+  }
+}
