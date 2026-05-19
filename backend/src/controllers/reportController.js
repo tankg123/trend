@@ -5,6 +5,7 @@ const ExcelJS = require("exceljs");
 const PDFDocument = require("pdfkit");
 const db = require("../config/database");
 const { getChannelFromYoutube, getChannelsFromYoutube, getQuotaStatus } = require("../services/youtubeService");
+const { generateGroupReconciliationExcel } = require("../services/reconciliationTemplateService");
 
 function decodeXml(value = "") {
   return String(value)
@@ -408,13 +409,18 @@ function groupDetail(groupId, month) {
   const conversion = exchangeFactor(group.currency, month);
   const channels = db.prepare(`
     SELECT gc.id AS group_channel_id, gc.custom_share, gc.channel_id AS group_channel_ref,
-           c.*, COALESCE(cr.revenue, 0) AS revenue
+           c.*, COALESCE(cr.revenue, 0) AS revenue, cr.network_name
     FROM group_channels gc
     LEFT JOIN channels c ON c.channel_id = gc.channel_id
     LEFT JOIN (
-      SELECT channel_id, month, SUM(revenue) AS revenue
-      FROM channel_revenues
-      GROUP BY channel_id, month
+      SELECT
+        cr.channel_id,
+        cr.month,
+        SUM(cr.revenue) AS revenue,
+        GROUP_CONCAT(DISTINCT COALESCE(n.name, '-')) AS network_name
+      FROM channel_revenues cr
+      LEFT JOIN networks n ON n.id = cr.network_id
+      GROUP BY cr.channel_id, cr.month
     ) cr ON cr.channel_id = gc.channel_id AND cr.month = ?
     WHERE gc.group_id = ?
     ORDER BY c.title COLLATE NOCASE, gc.channel_id
@@ -427,6 +433,7 @@ function groupDetail(groupId, month) {
       title: row.title || "Channel lỗi / die",
       status: row.status || "error",
       status_error: row.status_error || "Không lấy được dữ liệu từ YouTube",
+      network_name: row.network_name || "-",
       revenue_usd: revenueUsd,
       revenue: revenueUsd * conversion.factor,
       applied_share: rate
@@ -699,22 +706,25 @@ function buildReconciliationWorkbook(detail, company) {
 }
 
 async function sendExcelExport(res, detail, company) {
-  const workbook = buildReconciliationWorkbook(detail, company);
-  const buffer = await workbook.xlsx.writeBuffer();
+  const buffer = await generateGroupReconciliationExcel(detail, company);
   const fileName = `${safeFileName(detail.group_name || "group")}-${detail.month || "report"}.xlsx`;
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-  res.send(Buffer.from(buffer));
+  res.send(buffer);
 }
 
-function sendPdfExport(res, detail, company) {
+async function sendPdfExport(res, detail, company, options = {}) {
   const currency = detail.currency || "USD";
   const fileName = `${safeFileName(detail.group_name || "group")}-${detail.month || "invoice"}.pdf`;
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
 
   const doc = new PDFDocument({ size: "A4", margin: 0 });
-  doc.pipe(res);
+  const chunks = [];
+  const finished = new Promise((resolve, reject) => {
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+  });
+
   const regularFont = fs.existsSync("C:\\Windows\\Fonts\\arial.ttf") ? "C:\\Windows\\Fonts\\arial.ttf" : "Helvetica";
   const boldFont = fs.existsSync("C:\\Windows\\Fonts\\arialbd.ttf") ? "C:\\Windows\\Fonts\\arialbd.ttf" : "Helvetica-Bold";
   if (regularFont !== "Helvetica") doc.registerFont("AppRegular", regularFont);
@@ -800,6 +810,22 @@ function sendPdfExport(res, detail, company) {
   doc.rect(sideW, pageH - 36, pageW - sideW, 36).fill(lightGreen);
   doc.fillColor("white").font(boldPdf).fontSize(18).text("T H A N K S  Y O U R  B U S I N E S S", sideW + 38, pageH - 25);
   doc.end();
+
+  const buffer = await finished;
+
+  if (options.base64) {
+    res.json({
+      success: true,
+      fileName,
+      mimeType: "application/pdf",
+      data: buffer.toString("base64")
+    });
+    return;
+  }
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.send(buffer);
 }
 
 exports.importManagerReport = async (req, res) => {
@@ -826,7 +852,15 @@ exports.importManagerReport = async (req, res) => {
       return res.status(400).json({ success: false, message: "File không có dữ liệu channel/revenue hợp lệ" });
     }
 
-    const youtubeChannels = await getChannelsFromYoutube(rows.map((row) => row.channel_id));
+    let youtubeChannels = [];
+    let youtubeError = null;
+
+    try {
+      youtubeChannels = await getChannelsFromYoutube(rows.map((row) => row.channel_id), { includeLatest: false });
+    } catch (error) {
+      youtubeError = error;
+    }
+
     const foundIds = new Set(youtubeChannels.map((channel) => channel.channel_id));
     const saveRevenue = db.prepare(`
       INSERT INTO channel_revenues (month, network_id, channel_id, revenue, source_file, import_id, updated_at)
@@ -849,7 +883,12 @@ exports.importManagerReport = async (req, res) => {
 
       for (const channel of youtubeChannels) upsertChannel(channel);
       for (const channelId of missingChannels) {
-        upsertPlaceholderChannel(channelId, "Không tìm thấy channel trên YouTube khi import report");
+        upsertPlaceholderChannel(
+          channelId,
+          youtubeError
+            ? `YouTube sync skipped during import: ${youtubeError.message}`
+            : "Không tìm thấy channel trên YouTube khi import report"
+        );
       }
       for (const row of rows) {
         saveRevenue.run(month, network.id, row.channel_id, row.revenue, fileName || "", importId);
@@ -863,7 +902,9 @@ exports.importManagerReport = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Đã import report và cập nhật channel",
+      message: youtubeError
+        ? "Report imported. YouTube channel sync was skipped because the API returned an error."
+        : "Đã import report và cập nhật channel",
       data: {
         import_id: importId,
         month,
@@ -871,6 +912,12 @@ exports.importManagerReport = async (req, res) => {
         rows: rows.length,
         updated_channels: youtubeChannels.length,
         missing_channels: missingChannels,
+        youtube_error: youtubeError
+          ? {
+              message: youtubeError.message,
+              details: youtubeError.youtube || null
+            }
+          : null,
         total_revenue: totalRevenue
       }
     });
@@ -1382,11 +1429,13 @@ exports.exportGroupExcel = async (req, res) => {
   }
 };
 
-exports.exportGroupPdf = (req, res) => {
+exports.exportGroupPdf = async (req, res) => {
   try {
     const detail = groupDetail(req.params.id, String(req.body?.month || req.query.month || ""));
     if (!detail) return res.status(404).json({ success: false, message: "Group not found" });
-    sendPdfExport(res, detail, selectedCompany(req.body?.company_id || req.query.company_id));
+    await sendPdfExport(res, detail, selectedCompany(req.body?.company_id || req.query.company_id), {
+      base64: Boolean(req.body?.return_base64 || req.query.return_base64)
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: "Could not export PDF", error: error.message });
   }

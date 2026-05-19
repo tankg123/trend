@@ -15,10 +15,26 @@ function isSuperAdminRole(role) {
   return SUPER_ADMIN_ROLES.includes(normalizedRole(role));
 }
 
+function loadSavedUser() {
+  const savedUser = localStorage.getItem("user");
+
+  if (!savedUser || savedUser === "undefined" || savedUser === "null") {
+    localStorage.removeItem("user");
+    return null;
+  }
+
+  try {
+    return JSON.parse(savedUser);
+  } catch {
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
+    return null;
+  }
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem("user");
-    return savedUser ? JSON.parse(savedUser) : null;
+    return loadSavedUser();
   });
 
   const [token, setToken] = useState(() => {

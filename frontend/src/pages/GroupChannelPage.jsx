@@ -859,10 +859,54 @@ export default function GroupChannelPage() {
     if (!detail) return;
     try {
       setSaving(true);
+      const token = localStorage.getItem("token") || "";
+      const apiKey = import.meta.env.VITE_BACKEND_API_KEY || "";
+      const headers = {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(apiKey ? { "x-api-key": apiKey } : {})
+      };
+
+      if (format === "pdf") {
+        const res = await api.post(`/reports/groups/${detail.id}/export/pdf`, {
+          month,
+          company_id: selectedCompanyId || selectedCompany()?.id || "",
+          return_base64: true
+        }, {
+          timeout: 60000,
+          headers
+        });
+
+        const binary = atob(res.data.data || "");
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) {
+          bytes[index] = binary.charCodeAt(index);
+        }
+
+        downloadResponseBlob(
+          bytes,
+          res.data.fileName || `${detail.group_name || "group"}-${month}.pdf`,
+          res.data.mimeType || "application/pdf"
+        );
+        setExportModalOpen(false);
+        return;
+      }
+
       const res = await api.post(`/reports/groups/${detail.id}/export/${format}`, {
         month,
         company_id: selectedCompanyId || selectedCompany()?.id || ""
-      }, { responseType: "blob", timeout: 60000 });
+      }, {
+        responseType: "blob",
+        timeout: 60000,
+        headers
+      });
+
+      const contentType = res.headers?.["content-type"] || "";
+      if (contentType.includes("application/json")) {
+        const text = await res.data.text();
+        const payload = JSON.parse(text);
+        throw new Error(payload.message || payload.error || `Could not export ${format.toUpperCase()}`);
+      }
+
       const extension = format === "pdf" ? "pdf" : "xlsx";
       const mime = format === "pdf"
         ? "application/pdf"
@@ -870,7 +914,17 @@ export default function GroupChannelPage() {
       downloadResponseBlob(res.data, `${detail.group_name || "group"}-${month}.${extension}`, mime);
       setExportModalOpen(false);
     } catch (error) {
-      setMessage(error.response?.data?.message || `Could not export ${format.toUpperCase()}`);
+      if (error.response?.data instanceof Blob) {
+        const text = await error.response.data.text();
+        try {
+          const payload = JSON.parse(text);
+          setMessage(payload.message || payload.error || `Could not export ${format.toUpperCase()}`);
+        } catch {
+          setMessage(text || `Could not export ${format.toUpperCase()}`);
+        }
+      } else {
+        setMessage(error.message || error.response?.data?.message || `Could not export ${format.toUpperCase()}`);
+      }
     } finally {
       setSaving(false);
     }

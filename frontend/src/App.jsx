@@ -27,6 +27,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { I18nProvider, useI18n } from "./context/I18nContext";
 import LanguageToggle from "./components/LanguageToggle";
 import LanguageRuntime from "./components/LanguageRuntime";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 function LockedPage() {
   return (
@@ -406,12 +407,14 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <I18nProvider>
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
-      </I18nProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <I18nProvider>
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
+        </I18nProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
