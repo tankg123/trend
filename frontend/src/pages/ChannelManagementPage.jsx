@@ -21,9 +21,18 @@ export default function ChannelManagementPage() {
   const [collaborators, setCollaborators] = useState([]);
   const [sharings, setSharings] = useState([]);
   const [keyword, setKeyword] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState({
+    network_id: "",
+    partner_id: "",
+    sharing_id: "",
+    created_from: "",
+    created_to: ""
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState("");
   const [toast, setToast] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -78,6 +87,13 @@ export default function ChannelManagementPage() {
     return "";
   }
 
+  function sharingLabel(id) {
+    if (!id) return "";
+    const item = sharings.find((sharing) => String(sharing.id) === String(id));
+    if (!item) return "";
+    return `${item.name || `${item.share_rate}%`} (${Number(item.share_rate || 0)}%)`;
+  }
+
   function validateBulkSharingForm(form) {
     const selectedChannels = channels.filter((channel) => selectedIds.includes(channel.id));
     for (const channel of selectedChannels) {
@@ -91,11 +107,16 @@ export default function ChannelManagementPage() {
     return "";
   }
 
-  async function fetchData(searchValue = keyword) {
+  function activeFilters(source = filters) {
+    return Object.fromEntries(Object.entries(source).filter(([, value]) => value !== "" && value != null));
+  }
+
+  async function fetchData(searchValue = keyword, nextFilters = filters) {
     try {
       setLoading(true);
+      const params = { keyword: searchValue, ...activeFilters(nextFilters) };
       const [channelsRes, networksRes, partnersRes, collaboratorsRes, sharingsRes] = await Promise.all([
-        api.get("/channels/management", { params: { keyword: searchValue } }),
+        api.get("/channels/management", { params }),
         api.get("/reports/networks"),
         api.get("/reports/partners"),
         api.get("/channels/collaborators"),
@@ -111,6 +132,32 @@ export default function ChannelManagementPage() {
       setMessage(error.response?.data?.message || "Could not load channel management data");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function exportManagedChannels() {
+    try {
+      setExporting(true);
+      const ids = selectedIds.length ? selectedIds : [];
+      const res = await api.post("/channels/management/export", {
+        ids,
+        keyword,
+        filters: activeFilters()
+      }, { responseType: "blob" });
+      const blob = new Blob([res.data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `channel-management-${ids.length ? "selected" : "all"}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast(ids.length ? `Exported ${ids.length} selected channels` : "Exported all filtered channels");
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not export channels");
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -321,11 +368,11 @@ export default function ChannelManagementPage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setPage(1);
-      fetchData(keyword);
+      fetchData(keyword, filters);
     }, 350);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyword]);
+  }, [keyword, filters]);
 
   useEffect(() => {
     const pageCount = Math.max(1, Math.ceil(channels.length / pageSize));
@@ -403,16 +450,36 @@ export default function ChannelManagementPage() {
                 {syncing ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
                 Sync
               </button>
-              <button className="px-4 py-2 rounded-xl border border-slate-200 bg-white font-bold text-sm flex items-center gap-2"><Download size={16} /> Export</button>
+              <button
+                type="button"
+                onClick={exportManagedChannels}
+                disabled={exporting}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white font-bold text-sm flex items-center gap-2 disabled:opacity-60"
+              >
+                {exporting ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
+                Export{selectedIds.length ? ` (${selectedIds.length})` : ""}
+              </button>
               <button onClick={() => setBulkOpen(true)} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm flex items-center gap-2"><Plus size={16} /> Add Channel</button>
-              <button className="px-4 py-2 rounded-xl border border-slate-200 bg-white font-bold text-sm flex items-center gap-2"><Filter size={16} /> Filters</button>
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((open) => !open)}
+                className={`px-4 py-2 rounded-xl border font-bold text-sm flex items-center gap-2 ${filtersOpen ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white"}`}
+              >
+                <Filter size={16} /> Filters
+              </button>
             </div>
           </div>
 
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <label className="w-full md:w-[390px] flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <label className="w-full md:w-[520px] flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <Search size={17} className="text-slate-400" />
-              <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="Search name / channel id / custom url..." className="w-full bg-transparent outline-none text-sm" />
+              <textarea
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder={"Search name / channel id / custom url...\nPaste multiple channels, one per line"}
+                rows={keyword.includes("\n") ? 4 : 1}
+                className="w-full resize-none bg-transparent outline-none text-sm leading-5"
+              />
             </label>
             <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
               <button className="w-9 h-9 rounded-xl bg-white shadow-sm flex items-center justify-center"><List size={17} /></button>
@@ -420,6 +487,33 @@ export default function ChannelManagementPage() {
               <button className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500"><SlidersHorizontal size={17} /></button>
             </div>
           </div>
+
+          {filtersOpen && (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-3">
+                <SelectBox label="Network" value={filters.network_id} onChange={(v) => setFilters({ ...filters, network_id: v })} options={networks.map((n) => ({ value: n.id, label: n.name }))} fallback="All networks" />
+                <SelectBox label="Partner" value={filters.partner_id} onChange={(v) => setFilters({ ...filters, partner_id: v })} options={partners.map((p) => ({ value: p.id, label: p.display_name || p.partner_name }))} fallback="All partners" />
+                <SelectBox label="Rate Share" value={filters.sharing_id} onChange={(v) => setFilters({ ...filters, sharing_id: v })} options={sharings.map((s) => ({ value: s.id, label: `${s.name} (${s.share_rate}%)` }))} fallback="All rates" />
+                <label>
+                  <span className="font-black text-slate-700 mb-2 block">Added From</span>
+                  <input type="date" value={filters.created_from} onChange={(event) => setFilters({ ...filters, created_from: event.target.value })} className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-blue-500" />
+                </label>
+                <label>
+                  <span className="font-black text-slate-700 mb-2 block">Added To</span>
+                  <input type="date" value={filters.created_to} onChange={(event) => setFilters({ ...filters, created_to: event.target.value })} className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-blue-500" />
+                </label>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setFilters({ network_id: "", partner_id: "", sharing_id: "", created_from: "", created_to: "" })}
+                  className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-bold"
+                >
+                  Clear filters
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {message && <div className="mx-5 mt-4 rounded-2xl bg-blue-50 border border-blue-100 text-blue-700 px-4 py-3 font-medium">{message}</div>}
@@ -516,7 +610,7 @@ export default function ChannelManagementPage() {
                       <div className="rounded-2xl border border-slate-200 border-l-4 border-l-blue-500 px-3 py-2">
                         <p className="font-black text-slate-900">{channel.partner_display_name || channel.partner_name || "No partner"}</p>
                         <span className="inline-flex mt-2 rounded-lg bg-blue-600 text-white px-2 py-1 text-xs font-black">
-                          {channel.revenue_share_rate != null ? `${channel.revenue_sharing_name || ""}` : "No revenue sharing"}
+                          {channel.revenue_share_rate != null ? `${channel.revenue_share_rate}% Partner` : "No partner sharing"}
                         </span>
                       </div>
                     </td>
@@ -531,10 +625,12 @@ export default function ChannelManagementPage() {
                         <span className="text-xs font-bold text-slate-600">
                           {channel.collaborator_display_name || channel.collaborator_name || "No collaborators"}
                         </span>
-                        {channel.colab_revenue_share_rate != null && (
+                        {channel.colab_revenue_share_rate != null ? (
                           <span className="mt-1 text-[11px] font-black text-blue-600">
                             {channel.colab_revenue_share_rate}% sharing
                           </span>
+                        ) : (
+                          <span className="mt-1 text-[11px] font-bold text-slate-400">No colab sharing</span>
                         )}
                       </div>
                     </td>
@@ -577,31 +673,34 @@ export default function ChannelManagementPage() {
       </div>
 
       {bulkOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={createBulk} className="w-full max-w-6xl bg-white rounded-3xl shadow-2xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-200 flex items-start justify-between">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <form onSubmit={createBulk} className="w-full max-w-6xl max-h-[calc(100vh-24px)] sm:max-h-[calc(100vh-32px)] bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="shrink-0 px-5 sm:px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4 bg-white">
               <div>
                 <h2 className="text-2xl font-black text-slate-900">Add channels in bulk</h2>
                 <p className="text-slate-500 mt-2">Paste the data (Name + UC... + Time). The system will check it before creating the file.</p>
               </div>
-              <button type="button" onClick={() => setBulkOpen(false)} className="w-11 h-11 rounded-xl border border-slate-300 flex items-center justify-center"><X size={20} /></button>
+              <button type="button" onClick={() => setBulkOpen(false)} className="shrink-0 w-11 h-11 rounded-xl border border-slate-300 flex items-center justify-center"><X size={20} /></button>
             </div>
 
-            <div className="p-6 space-y-5">
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-4 space-y-5">
               <p className="font-bold text-slate-700">{previewChannels.length || 0} channels</p>
               <div className="grid lg:grid-cols-3 gap-4">
                 <SelectBox label="Network" value={bulkForm.network_id} onChange={(v) => setBulkForm({ ...bulkForm, network_id: v })} options={networks.map((n) => ({ value: n.id, label: n.name }))} fallback="All networks" />
-                <SelectBox label="Collaborator" value={bulkForm.collaborator_id} onChange={(v) => setBulkForm({ ...bulkForm, collaborator_id: v })} options={collaborators.map((c) => ({ value: c.id, label: c.display_name || c.name }))} fallback="All collaborators" />
-                <SelectBox label="Colab Revenue Sharing" value={bulkForm.colab_sharing_id} onChange={(v) => setBulkForm({ ...bulkForm, colab_sharing_id: v })} options={sharings.map((s) => ({ value: s.id, label: `${s.name} (${s.share_rate}%)` }))} fallback="All colab revenue sharings" />
+                <SelectBox label="Collaborator" value={bulkForm.collaborator_id} onChange={(v) => setBulkForm({ ...bulkForm, collaborator_id: v })} options={collaborators.map((c) => ({ value: c.id, label: c.display_name || c.name }))} fallback="No collaborator" />
+                <SelectBox label="Colab Revenue Sharing" value={bulkForm.colab_sharing_id} onChange={(v) => setBulkForm({ ...bulkForm, colab_sharing_id: v })} options={sharings.map((s) => ({ value: s.id, label: `${s.name} (${s.share_rate}%)` }))} fallback="No colab revenue sharing" />
                 <SelectBox label="Partner" value={bulkForm.partner_id} onChange={(v) => setBulkForm({ ...bulkForm, partner_id: v })} options={partners.map((p) => ({ value: p.id, label: p.display_name || p.partner_name }))} fallback="All partners" />
                 <SelectBox label="Revenue Sharing" value={bulkForm.sharing_id} onChange={(v) => setBulkForm({ ...bulkForm, sharing_id: v })} options={sharings.map((s) => ({ value: s.id, label: `${s.share_rate}%` }))} fallback="All revenue sharings" />
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <b className="text-slate-900">Sharing total:</b> Partner {sharingLabel(bulkForm.sharing_id) || "0%"} + Collaborator {sharingLabel(bulkForm.colab_sharing_id) || "0%"} must be max 100%.
               </div>
 
               <textarea
                 value={bulkText}
                 onChange={(event) => setBulkText(event.target.value)}
                 placeholder={"Jingle Beats UC8C5qzyDc1rOuAmqxASPtqg\n@mychannel\nhttps://youtube.com/@mychannel"}
-                className="w-full min-h-40 rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500"
+                className="w-full h-32 rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500"
                 required
               />
 
@@ -615,7 +714,7 @@ export default function ChannelManagementPage() {
                       </span>
                     )}
                   </div>
-                  <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3 max-h-72 overflow-y-auto pr-1">
+                  <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3 max-h-60 overflow-y-auto pr-1">
                     {(bulkPreview.length ? bulkPreview : previewChannels.map((input) => ({
                       input,
                       channel_id: input.match(/UC[a-zA-Z0-9_-]{10,}/)?.[0] || input,
@@ -662,7 +761,7 @@ export default function ChannelManagementPage() {
               )}
             </div>
 
-            <div className="px-6 py-5 border-t border-slate-200 flex justify-end gap-3">
+            <div className="shrink-0 px-5 sm:px-6 py-4 border-t border-slate-200 bg-white flex justify-end gap-3">
               <button type="button" onClick={() => setBulkOpen(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Close</button>
               <button type="button" className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Back</button>
               <button disabled={saving} className="px-6 py-3 rounded-2xl bg-blue-600 text-white font-black flex items-center gap-2 disabled:opacity-60">

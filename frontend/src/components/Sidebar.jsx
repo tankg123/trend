@@ -1,15 +1,15 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   BriefcaseBusiness,
+  BarChart3,
   Building2,
   ChevronDown,
   CircleDollarSign,
-  Crown,
   FileSpreadsheet,
-  LogOut,
   Network,
   Percent,
+  Settings,
   UserRound,
   Users,
   UsersRound,
@@ -17,17 +17,26 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../context/I18nContext";
-import LanguageToggle from "./LanguageToggle";
+import { useTheme } from "../context/ThemeContext";
+import { useSystemSettings } from "../context/SystemSettingsContext";
+
+const logoColors = ["#2f8ccf", "#0f9f6e", "#7c3aed", "#ef4444", "#f59e0b", "#0891b2", "#db2777"];
 
 export default function Sidebar() {
   const location = useLocation();
-  const { user, logout } = useAuth();
-  const { canViewReports, canViewChannelManagement, canViewPartner, canViewAccount } = useAuth();
+  const { canViewReports, canViewChannelManagement, canViewPartner, canViewAccount, canViewSettings } = useAuth();
   const { t } = useI18n();
+  const { theme } = useTheme();
+  const { settings } = useSystemSettings();
+  const isDark = theme === "dark";
+  const useUploadedLogo = settings.logo_mode === "upload" && settings.logo_data_url;
+  const logoColor = useMemo(() => logoColors[Math.floor(Math.random() * logoColors.length)], []);
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
-  const reportPaths = ["/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
+  const reportPaths = ["/report-dashboard", "/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
+  const settingsPaths = ["/settings/system"];
   const [channelOpen, setChannelOpen] = useState(channelPaths.includes(location.pathname) || location.pathname === "/");
   const [reportOpen, setReportOpen] = useState(reportPaths.includes(location.pathname));
+  const [settingsOpen, setSettingsOpen] = useState(settingsPaths.includes(location.pathname));
 
   const channelMenus = [
     { name: "Channel Management", path: "/channel-management", icon: Video },
@@ -36,6 +45,7 @@ export default function Sidebar() {
   ];
 
   const reportMenus = [
+    { name: "Dashboard", path: "/report-dashboard", icon: BarChart3 },
     { name: t("report"), path: "/reports", icon: FileSpreadsheet },
     { name: "Channel", path: "/channels", icon: Video },
     { name: t("network"), path: "/networks", icon: Network },
@@ -49,40 +59,34 @@ export default function Sidebar() {
     ...(canViewAccount ? [{ name: t("account"), path: "/account", icon: UserRound }] : [])
   ];
 
-  function handleLogout() {
-    logout();
-    window.location.href = "/login";
-  }
+  const settingsMenus = [
+    { name: t("systemSettings"), path: "/settings/system", icon: Settings }
+  ];
 
   return (
-    <aside className="w-[260px] h-screen sticky top-0 bg-[#0f172a] text-white p-5 hidden lg:flex flex-col overflow-hidden">
-      <div className="flex items-center gap-3 mb-8">
-        <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center shadow-lg shadow-slate-950/20 overflow-hidden">
-          <img src="/ans-logo.png" alt="ANS Network" className="w-10 h-10 object-contain" />
+    <aside
+      className={[
+        "w-[260px] h-screen sticky top-0 p-5 hidden lg:flex flex-col overflow-hidden border-r",
+        isDark ? "bg-[#0f172a] text-white border-slate-800" : "bg-white text-slate-950 border-slate-200"
+      ].join(" ")}
+    >
+      <div className="mb-8 text-center">
+        <div
+          className={[
+            "mx-auto w-28 h-28 rounded-full flex items-center justify-center shadow-lg shadow-slate-950/25 overflow-hidden ring-4",
+            isDark ? "ring-white/10" : "ring-slate-100"
+          ].join(" ")}
+          style={{ backgroundColor: useUploadedLogo ? "transparent" : logoColor }}
+        >
+          <img
+            src={useUploadedLogo ? settings.logo_data_url : "https://revenue.ansnetwork.vn/images/logo-slideBar.png"}
+            alt={settings.brand_name || "ANS Network"}
+            className={useUploadedLogo ? "w-full h-full object-cover" : "w-16 h-16 object-contain"}
+          />
         </div>
 
-        <div>
-          <h1 className="text-lg font-bold leading-tight">{t("appTitle")}</h1>
-          <p className="text-xs text-slate-400">{t("appSubtitle")}</p>
-        </div>
-      </div>
-
-      <div className="bg-slate-800/80 border border-slate-700 rounded-2xl p-4 mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center font-black">
-            {user?.full_name?.charAt(0)?.toUpperCase() || "U"}
-          </div>
-
-          <div className="min-w-0">
-            <p className="font-bold truncate">{user?.full_name}</p>
-            <p className="text-xs text-slate-400 truncate">{user?.email}</p>
-          </div>
-        </div>
-
-        <div className="mt-3 inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/10 text-xs font-black uppercase">
-          <Crown size={13} />
-          {user?.role}
-        </div>
+        <h1 className="mt-5 text-xl font-black leading-tight">{settings.brand_name || t("appTitle")}</h1>
+        <p className={["mt-1 text-sm font-bold", isDark ? "text-slate-400" : "text-slate-500"].join(" ")}>{settings.brand_subtitle || t("appSubtitle")}</p>
       </div>
 
       <nav className="space-y-2 flex-1">
@@ -97,7 +101,9 @@ export default function Sidebar() {
                 "w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all",
                 channelPaths.includes(location.pathname) || location.pathname === "/"
                   ? "bg-blue-600 text-white shadow-lg shadow-blue-900/30"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  : isDark
+                    ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    : "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
               ].join(" ")}
             >
               <Video size={20} />
@@ -106,7 +112,7 @@ export default function Sidebar() {
             </button>
 
             {channelOpen && (
-              <div className="mt-2 ml-6 space-y-1 border-l border-slate-700 pl-3">
+              <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
                 {channelMenus.map((item) => {
                   const Icon = item.icon;
                   const active = location.pathname === item.path || (location.pathname === "/" && item.path === "/channel-management");
@@ -117,8 +123,12 @@ export default function Sidebar() {
                       className={[
                         "flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all",
                         active
-                          ? "bg-blue-500/20 text-white"
-                          : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                          ? isDark
+                            ? "bg-blue-500/20 text-white"
+                            : "bg-blue-50 text-blue-700"
+                          : isDark
+                            ? "text-slate-400 hover:bg-slate-800 hover:text-white"
+                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
                       ].join(" ")}
                     >
                       <Icon size={16} />
@@ -140,7 +150,9 @@ export default function Sidebar() {
                 "w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all",
                 reportPaths.includes(location.pathname)
                   ? "bg-blue-600 text-white shadow-lg shadow-blue-900/30"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  : isDark
+                    ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    : "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
               ].join(" ")}
             >
               <FileSpreadsheet size={20} />
@@ -149,7 +161,7 @@ export default function Sidebar() {
             </button>
 
             {reportOpen && (
-              <div className="mt-2 ml-6 space-y-1 border-l border-slate-700 pl-3">
+              <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
                 {reportMenus.map((item) => {
                   const Icon = item.icon;
                   const active = location.pathname === item.path;
@@ -160,8 +172,12 @@ export default function Sidebar() {
                       className={[
                         "flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all",
                         active
-                          ? "bg-blue-500/20 text-white"
-                          : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                          ? isDark
+                            ? "bg-blue-500/20 text-white"
+                            : "bg-blue-50 text-blue-700"
+                          : isDark
+                            ? "text-slate-400 hover:bg-slate-800 hover:text-white"
+                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
                       ].join(" ")}
                     >
                       <Icon size={16} />
@@ -188,7 +204,9 @@ export default function Sidebar() {
                 "flex items-center gap-3 px-4 py-3 rounded-2xl transition-all",
                 active
                   ? "bg-blue-600 text-white shadow-lg shadow-blue-900/30"
-                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  : isDark
+                    ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    : "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
               ].join(" ")}
             >
               <Icon size={20} />
@@ -196,22 +214,57 @@ export default function Sidebar() {
             </Link>
           );
         })}
+
+        {canViewSettings && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen((open) => !open)}
+              className={[
+                "w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all",
+                settingsPaths.includes(location.pathname)
+                  ? "bg-blue-600 text-white shadow-lg shadow-blue-900/30"
+                  : isDark
+                    ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    : "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+              ].join(" ")}
+            >
+              <Settings size={20} />
+              <span className="font-medium flex-1 text-left">{t("settings")}</span>
+              <ChevronDown size={17} className={settingsOpen ? "rotate-180 transition" : "transition"} />
+            </button>
+
+            {settingsOpen && (
+              <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
+                {settingsMenus.map((item) => {
+                  const Icon = item.icon;
+                  const active = location.pathname === item.path;
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      className={[
+                        "flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all",
+                        active
+                          ? isDark
+                            ? "bg-blue-500/20 text-white"
+                            : "bg-blue-50 text-blue-700"
+                          : isDark
+                            ? "text-slate-400 hover:bg-slate-800 hover:text-white"
+                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                      ].join(" ")}
+                    >
+                      <Icon size={16} />
+                      <span className="font-medium">{item.name}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </nav>
 
-      <LanguageToggle dark />
-
-      <div className="mt-5 p-4 rounded-2xl bg-slate-800/80 border border-slate-700">
-        <p className="text-xs text-slate-400 mb-1">{t("apiStatus")}</p>
-        <p className="text-sm font-semibold text-emerald-400">{t("ready")}</p>
-      </div>
-
-      <button
-        onClick={handleLogout}
-        className="mt-4 w-full bg-red-500/10 hover:bg-red-500/20 text-red-300 px-4 py-3 rounded-2xl font-bold flex items-center justify-center gap-2"
-      >
-        <LogOut size={18} />
-        {t("logout")}
-      </button>
     </aside>
   );
 }

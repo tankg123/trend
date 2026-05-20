@@ -50,6 +50,13 @@ export function AuthProvider({ children }) {
     setUser(authUser);
   }
 
+  function updateSavedUser(authUser, authToken = token) {
+    if (authToken) localStorage.setItem("token", authToken);
+    localStorage.setItem("user", JSON.stringify(authUser));
+    if (authToken) setToken(authToken);
+    setUser(authUser);
+  }
+
   function logout() {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -101,6 +108,7 @@ export function AuthProvider({ children }) {
         token,
         authLoading,
         saveAuth,
+        updateSavedUser,
         logout,
         role,
         isSuperAdmin: isSuperAdminRole(role),
@@ -112,6 +120,7 @@ export function AuthProvider({ children }) {
         canViewChannelManagement: isAdmin || isChannelManagement,
         canViewPartner: isAdmin || isReportManager || isChannelManagement,
         canViewAccount: isAdmin,
+        canViewSettings: isAdmin,
         isUser: role === "user"
       }}
     >

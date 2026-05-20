@@ -7,9 +7,10 @@ import {
   useLocation,
   Navigate
 } from "react-router-dom";
-import { BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, FileSpreadsheet, Network, Percent, Users, UsersRound, Video, UserRound, Loader2 } from "lucide-react";
+import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, FileSpreadsheet, Network, Percent, Settings, Users, UsersRound, Video, UserRound, Loader2 } from "lucide-react";
 
 import Sidebar from "./components/Sidebar";
+import Topbar from "./components/Topbar";
 import ChannelManagementPage from "./pages/ChannelManagementPage";
 import CollaboratorsPage from "./pages/CollaboratorsPage";
 import RevenueSharingPage from "./pages/RevenueSharingPage";
@@ -18,13 +19,17 @@ import AccountPage from "./pages/AccountPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ManagerReportPage from "./pages/ManagerReportPage";
+import ReportDashboardPage from "./pages/ReportDashboardPage";
 import PartnerPage from "./pages/PartnerPage";
 import GroupChannelPage from "./pages/GroupChannelPage";
 import NetworkPage from "./pages/NetworkPage";
 import ExchangeRatePage from "./pages/ExchangeRatePage";
 import CompanyPage from "./pages/CompanyPage";
+import SettingsPage from "./pages/SettingsPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { I18nProvider, useI18n } from "./context/I18nContext";
+import { ThemeProvider } from "./context/ThemeContext";
+import { SystemSettingsProvider } from "./context/SystemSettingsContext";
 import LanguageToggle from "./components/LanguageToggle";
 import LanguageRuntime from "./components/LanguageRuntime";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -42,10 +47,11 @@ function LockedPage() {
 
 function MobileNav() {
   const location = useLocation();
-  const { canViewReports, canViewChannelManagement, canViewPartner, canViewAccount } = useAuth();
+  const { canViewReports, canViewChannelManagement, canViewPartner, canViewAccount, canViewSettings } = useAuth();
   const { t } = useI18n();
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
-  const reportPaths = ["/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
+  const reportPaths = ["/report-dashboard", "/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
+  const settingsPaths = ["/settings/system"];
   const [channelOpen, setChannelOpen] = useState(channelPaths.includes(location.pathname) || location.pathname === "/");
   const [reportOpen, setReportOpen] = useState(reportPaths.includes(location.pathname));
 
@@ -56,6 +62,11 @@ function MobileNav() {
   ].filter(() => canViewChannelManagement);
 
   const reportMenus = [
+    {
+      name: "Dashboard",
+      path: "/report-dashboard",
+      icon: BarChart3
+    },
     {
       name: t("report"),
       path: "/reports",
@@ -102,6 +113,14 @@ function MobileNav() {
       show: canViewAccount
     }
   ].filter((item) => item.show);
+
+  const settingsMenus = [
+    {
+      name: t("systemSettings"),
+      path: "/settings/system",
+      icon: Settings
+    }
+  ].filter(() => canViewSettings);
 
   return (
     <div className="lg:hidden sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-200 px-4 py-3">
@@ -213,13 +232,36 @@ function MobileNav() {
             </Link>
           );
         })}
+        {canViewSettings && (
+          <div className="col-span-2">
+            <div className="grid grid-cols-1 gap-2">
+              {settingsMenus.map((item) => {
+                const Icon = item.icon;
+                const active = settingsPaths.includes(location.pathname);
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={[
+                      "flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold",
+                      active ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+                    ].join(" ")}
+                  >
+                    <Icon size={17} />
+                    {item.name}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 function PrivateLayout() {
-  const { user, authLoading, canViewReports, canViewChannelManagement, canViewPartner, canViewAccount } = useAuth();
+  const { user, authLoading, canViewReports, canViewChannelManagement, canViewPartner, canViewAccount, canViewSettings } = useAuth();
 
   if (authLoading) {
     return (
@@ -233,13 +275,14 @@ function PrivateLayout() {
     return <Navigate to="/login" replace />;
   }
 
-  const defaultPath = canViewChannelManagement ? "/channel-management" : canViewReports ? "/reports" : canViewPartner ? "/partners" : canViewAccount ? "/account" : "/locked";
+  const defaultPath = canViewChannelManagement ? "/channel-management" : canViewReports ? "/report-dashboard" : canViewPartner ? "/partners" : canViewAccount ? "/account" : canViewSettings ? "/settings/system" : "/locked";
 
   return (
     <div className="min-h-screen flex bg-[#f3f6fb]">
       <Sidebar />
 
       <main className="flex-1 min-w-0">
+        <Topbar />
         <MobileNav />
 
         <Routes>
@@ -274,6 +317,16 @@ function PrivateLayout() {
             element={
               canViewChannelManagement ? (
                 <RevenueSharingPage />
+              ) : (
+                <Navigate to={defaultPath} replace />
+              )
+            }
+          />
+          <Route
+            path="/report-dashboard"
+            element={
+              canViewReports ? (
+                <ReportDashboardPage />
               ) : (
                 <Navigate to={defaultPath} replace />
               )
@@ -350,6 +403,8 @@ function PrivateLayout() {
             }
           />
           <Route path="/account" element={canViewAccount ? <AccountPage /> : <Navigate to={defaultPath} replace />} />
+          <Route path="/settings" element={<Navigate to="/settings/system" replace />} />
+          <Route path="/settings/system" element={canViewSettings ? <SettingsPage /> : <Navigate to={defaultPath} replace />} />
           <Route path="/locked" element={<LockedPage />} />
           <Route path="*" element={<Navigate to={defaultPath} replace />} />
         </Routes>
@@ -410,9 +465,13 @@ export default function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <I18nProvider>
-          <AuthProvider>
-            <AppRoutes />
-          </AuthProvider>
+          <ThemeProvider>
+            <SystemSettingsProvider>
+              <AuthProvider>
+                <AppRoutes />
+              </AuthProvider>
+            </SystemSettingsProvider>
+          </ThemeProvider>
         </I18nProvider>
       </BrowserRouter>
     </ErrorBoundary>

@@ -5,7 +5,7 @@ const I18nContext = createContext(null);
 export const translations = {
   en: {
     appTitle: "ANS Network",
-    appSubtitle: "Channel Manager",
+    appSubtitle: "MCN Manager System",
     channel: "Channel",
     video: "Video",
     report: "Report",
@@ -15,6 +15,8 @@ export const translations = {
     partner: "Partner",
     group: "Group",
     account: "Account",
+    settings: "Settings",
+    systemSettings: "System Settings",
     apiStatus: "API Status",
     ready: "Ready",
     logout: "Logout",
@@ -51,7 +53,7 @@ export const translations = {
   },
   vi: {
     appTitle: "ANS Network",
-    appSubtitle: "Quản lý kênh",
+    appSubtitle: "MCN Manager System",
     channel: "Kênh",
     video: "Video",
     report: "Báo cáo",
@@ -61,6 +63,8 @@ export const translations = {
     partner: "Đối tác",
     group: "Nhóm",
     account: "Tài khoản",
+    settings: "Cài đặt",
+    systemSettings: "Cài đặt hệ thống",
     apiStatus: "Trạng thái API",
     ready: "Sẵn sàng",
     logout: "Đăng xuất",
