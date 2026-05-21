@@ -4,6 +4,7 @@ const reportController = require("../controllers/reportController");
 const { authMiddleware, allowRoles } = require("../middlewares/authMiddleware");
 
 const REPORT_ROLES = ["admin", "Report Manager"];
+const GROUP_READ_ROLES = ["admin", "Report Manager", "Partner"];
 const PARTNER_ROLES = ["admin", "Report Manager", "Channel Management"];
 const NETWORK_READ_ROLES = ["admin", "Report Manager", "Channel Management"];
 
@@ -35,13 +36,13 @@ router.post("/partners", allowRoles(...PARTNER_ROLES), reportController.createPa
 router.put("/partners/:id", allowRoles(...PARTNER_ROLES), reportController.updatePartner);
 router.delete("/partners/:id", allowRoles(...PARTNER_ROLES), reportController.deletePartner);
 
-router.get("/groups", allowRoles(...REPORT_ROLES), reportController.getGroups);
+router.get("/groups", allowRoles(...GROUP_READ_ROLES), reportController.getGroups);
 router.post("/groups", allowRoles(...REPORT_ROLES), reportController.createGroup);
 router.put("/groups/:id", allowRoles(...REPORT_ROLES), reportController.updateGroup);
 router.delete("/groups/:id", allowRoles(...REPORT_ROLES), reportController.deleteGroup);
-router.get("/groups/:id", allowRoles(...REPORT_ROLES), reportController.getGroupDetail);
-router.post("/groups/:id/export/excel", allowRoles(...REPORT_ROLES), reportController.exportGroupExcel);
-router.post("/groups/:id/export/pdf", allowRoles(...REPORT_ROLES), reportController.exportGroupPdf);
+router.get("/groups/:id", allowRoles(...GROUP_READ_ROLES), reportController.getGroupDetail);
+router.post("/groups/:id/export/excel", allowRoles(...GROUP_READ_ROLES), reportController.exportGroupExcel);
+router.post("/groups/:id/export/pdf", allowRoles(...GROUP_READ_ROLES), reportController.exportGroupPdf);
 router.post("/groups/:id/channels", allowRoles(...REPORT_ROLES), reportController.addGroupChannels);
 router.delete("/groups/:id/channels/:channelId", allowRoles(...REPORT_ROLES), reportController.removeGroupChannel);
 

@@ -500,6 +500,25 @@ function groupDetail(groupId, month) {
   };
 }
 
+function isPartnerUser(user) {
+  return String(user?.role || "").trim().toLowerCase() === "partner";
+}
+
+function partnerGroupIds(userId) {
+  return db.prepare("SELECT group_id FROM user_group_permissions WHERE user_id = ?")
+    .all(userId)
+    .map((row) => Number(row.group_id));
+}
+
+function canUserReadGroup(user, groupId) {
+  if (!isPartnerUser(user)) return true;
+  return Boolean(db.prepare(`
+    SELECT 1
+    FROM user_group_permissions
+    WHERE user_id = ? AND group_id = ?
+  `).get(user.id, groupId));
+}
+
 function moneyText(value, currency = "USD") {
   const normalized = String(currency || "USD").toUpperCase();
   return new Intl.NumberFormat(normalized === "VND" ? "vi-VN" : normalized === "GBP" ? "en-GB" : "en-US", {
@@ -725,96 +744,217 @@ async function sendPdfExport(res, detail, company, options = {}) {
     doc.on("error", reject);
   });
 
-  const regularFont = fs.existsSync("C:\\Windows\\Fonts\\arial.ttf") ? "C:\\Windows\\Fonts\\arial.ttf" : "Helvetica";
-  const boldFont = fs.existsSync("C:\\Windows\\Fonts\\arialbd.ttf") ? "C:\\Windows\\Fonts\\arialbd.ttf" : "Helvetica-Bold";
+  const regularFontCandidates = [
+    "C:\\Windows\\Fonts\\arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+  ];
+  const boldFontCandidates = [
+    "C:\\Windows\\Fonts\\arialbd.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+  ];
+  const regularFont = regularFontCandidates.find((fontPath) => fs.existsSync(fontPath)) || "Helvetica";
+  const boldFont = boldFontCandidates.find((fontPath) => fs.existsSync(fontPath)) || "Helvetica-Bold";
   if (regularFont !== "Helvetica") doc.registerFont("AppRegular", regularFont);
   if (boldFont !== "Helvetica-Bold") doc.registerFont("AppBold", boldFont);
   const regular = regularFont === "Helvetica" ? "Helvetica" : "AppRegular";
   const boldPdf = boldFont === "Helvetica-Bold" ? "Helvetica-Bold" : "AppBold";
 
-  const green = "#17715f";
-  const lightGreen = "#82c94e";
-  const dark = "#2c2f35";
-  const gray = "#747b86";
-  const logoPath = path.resolve(__dirname, "../../templates/ans-logo.png");
   const pageW = doc.page.width;
   const pageH = doc.page.height;
-  const sideW = 164;
-  const mainX = sideW + 48;
+  const margin = 34;
+  const contentW = pageW - margin * 2;
+  const primary = "#1F8A5B";
+  const primaryDark = "#11613E";
+  const pale = "#EAF8EF";
+  const pale2 = "#F6FCF8";
+  const line = "#D6EADF";
+  const dark = "#0F172A";
+  const gray = "#64748B";
+  const logoPath = path.resolve(__dirname, "../../templates/ans-logo.png");
 
-  doc.rect(0, 0, sideW, pageH).fill(green);
-  if (fs.existsSync(logoPath)) {
-    doc.roundedRect(24, 36, 116, 72, 10).fill("white");
-    doc.image(logoPath, 34, 46, { fit: [96, 52], align: "center", valign: "center" });
-  } else {
-    doc.fillColor("white").font(boldPdf).fontSize(22).text("ANS\nNetwork", 30, 42, { lineGap: 2 });
+  function text(value) {
+    return value == null || value === "" ? "-" : String(value);
   }
-  doc.fontSize(10).text(`Invoice# ${detail.month || ""}-${detail.id}`, 28, 170);
-  doc.text(`Invoice Date: ${new Date().toLocaleDateString("en-GB")}`, 28, 190);
-  doc.text(`Account: ${detail.account_number || "-"}`, 28, 210);
-  doc.save().rotate(-90, { origin: [58, 460] }).fontSize(48).text("I N V O I C E", -475, 35).restore();
-  doc.fontSize(9).text("Phone", 28, 610).font(regular).text(company.phone || "-", 28, 625);
-  doc.font(boldPdf).text("E-mail", 28, 650).font(regular).text(company.email || "-", 28, 665, { width: 112 });
-  doc.font(boldPdf).text("Address", 28, 692).font(regular).text(company.address || "-", 28, 707, { width: 112 });
-  doc.font(boldPdf).text("TERM & CONDITIONS", 28, 760).font(regular).text("Revenue reconciliation for YouTube channels, subject to monthly exchange rate and agreed partner share.", 28, 778, { width: 112, lineGap: 2 });
 
-  doc.fillColor(dark);
-  doc.font(regular).fontSize(10).fillColor(gray).text("Invoice From,", mainX, 58);
-  doc.font(boldPdf).fontSize(18).fillColor(dark).text(company.company_name || "-", mainX, 78, { width: 150 });
-  doc.fontSize(10).text("Phone", mainX, 132).font(regular).text(company.phone || "-", mainX, 148);
-  doc.font(boldPdf).text("E-mail", mainX, 170).font(regular).text(company.email || "-", mainX, 186, { width: 150 });
-  doc.font(boldPdf).text("Address", mainX, 208).font(regular).text(company.address || "-", mainX, 224, { width: 150 });
+  function drawLogo(x, y, size) {
+    doc.circle(x + size / 2, y + size / 2, size / 2).fill("white");
+    doc.circle(x + size / 2, y + size / 2, size / 2).lineWidth(1).stroke(line);
+    if (fs.existsSync(logoPath)) {
+      doc.image(logoPath, x + 10, y + 10, { fit: [size - 20, size - 20], align: "center", valign: "center" });
+    } else {
+      doc.fillColor(primaryDark).font(boldPdf).fontSize(15).text("ANS", x, y + size / 2 - 9, { width: size, align: "center" });
+    }
+  }
 
-  const rightX = 386;
-  doc.font(regular).fontSize(10).fillColor(gray).text("Invoice To,", rightX, 58);
-  doc.font(boldPdf).fontSize(18).fillColor(dark).text(detail.partner_name || "-", rightX, 78, { width: 150 });
-  doc.fontSize(10).text("Phone", rightX, 132).font(regular).text(detail.phone || "-", rightX, 148);
-  doc.font(boldPdf).text("E-mail", rightX, 170).font(regular).text(detail.email || "-", rightX, 186, { width: 150 });
-  doc.font(boldPdf).text("Address", rightX, 208).font(regular).text(detail.address || "-", rightX, 224, { width: 150 });
+  function footer() {
+    const y = pageH - 34;
+    doc.rect(0, y, pageW, 34).fill(pale);
+    doc.fillColor(primaryDark).font(boldPdf).fontSize(8).text("ANS Network - YouTube Revenue Reconciliation", margin, y + 12);
+    doc.fillColor(gray).font(regular).fontSize(8).text(`Page ${doc.bufferedPageRange().count || ""}`, pageW - margin - 60, y + 12, { width: 60, align: "right" });
+  }
 
-  let y = 292;
-  const tableX = mainX - 70;
-  const tableW = pageW - tableX - 36;
-  doc.rect(tableX, y, tableW, 24).fill(lightGreen);
-  doc.fillColor("white").font(boldPdf).fontSize(10);
-  doc.text("ITEM DESCRIPTIONS", tableX + 70, y + 8);
-  doc.text("QTY", tableX + 280, y + 8);
-  doc.text("PRICE", tableX + 350, y + 8);
-  doc.text("TOTAL", tableX + 430, y + 8);
-  y += 40;
+  function pageChrome() {
+    doc.rect(0, 0, pageW, pageH).fill("white");
+    doc.rect(0, 0, pageW, 96).fill(pale);
+    doc.rect(0, 96, pageW, 2).fill("#CBEFD8");
+    footer();
+  }
 
-  doc.fillColor(dark).fontSize(10);
-  detail.channels.slice(0, 8).forEach((channel) => {
-    doc.font(boldPdf).text(channel.title || channel.channel_id || "Channel", tableX, y, { width: 250 });
-    doc.font(regular).fillColor(gray).fontSize(8).text(channel.channel_id || "", tableX, y + 15, { width: 250 });
-    doc.fillColor(dark).font(regular).fontSize(10).text(`${Number(channel.applied_share || 0)}%`, tableX + 288, y + 8, { width: 45, align: "center" });
-    doc.text(moneyText(channel.revenue_usd || 0, "USD"), tableX + 335, y + 8, { width: 70, align: "right" });
-    doc.text(moneyText(channel.paid ?? channel.share_amount_converted ?? 0, currency), tableX + 410, y + 8, { width: 90, align: "right" });
-    y += 54;
+  function field(label, value, x, y, width) {
+    doc.fillColor(gray).font(boldPdf).fontSize(7).text(label.toUpperCase(), x, y, { width });
+    doc.fillColor(dark).font(regular).fontSize(9).text(text(value), x, y + 12, { width, lineGap: 2 });
+  }
+
+  function card(x, y, w, h, title, rows) {
+    doc.roundedRect(x, y, w, h, 12).fillAndStroke(pale2, line);
+    doc.fillColor(primaryDark).font(boldPdf).fontSize(10).text(title.toUpperCase(), x + 14, y + 13, { width: w - 28 });
+    let rowY = y + 34;
+    rows.forEach((row) => {
+      field(row.label, row.value, x + 14, rowY, w - 28);
+      rowY += row.height || 35;
+    });
+  }
+
+  function singleLine(value, maxLength = 38) {
+    const clean = text(value).replace(/\s+/g, " ").trim();
+    return clean.length > maxLength ? `${clean.slice(0, maxLength - 1)}...` : clean;
+  }
+
+  function summaryBox(x, y, w, label, value, subValue, fill = "white") {
+    doc.roundedRect(x, y, w, 58, 10).fillAndStroke(fill, line);
+    doc.fillColor(gray).font(boldPdf).fontSize(7).text(label.toUpperCase(), x + 12, y + 12, { width: w - 24 });
+    doc.fillColor(label.includes("PAYABLE") ? primaryDark : dark).font(boldPdf).fontSize(13).text(value, x + 12, y + 28, { width: w - 24 });
+    if (subValue) doc.fillColor(gray).font(regular).fontSize(8).text(subValue, x + 12, y + 44, { width: w - 24 });
+  }
+
+  function drawHeader() {
+    pageChrome();
+    drawLogo(margin, 24, 54);
+    doc.fillColor(dark).font(boldPdf).fontSize(24).text("INVOICE", margin + 70, 26);
+    doc.fillColor(gray).font(regular).fontSize(9).text("YouTube reconciliation minutes", margin + 72, 57);
+    doc.fillColor(primaryDark).font(boldPdf).fontSize(11).text(monthTitle(detail.month), margin + 72, 72);
+
+    doc.roundedRect(pageW - margin - 182, 24, 182, 54, 10).fillAndStroke("white", line);
+    doc.fillColor(gray).font(boldPdf).fontSize(7).text("INVOICE NO.", pageW - margin - 168, 36);
+    doc.fillColor(dark).font(boldPdf).fontSize(12).text(`${detail.month || "month"}-${detail.id}`, pageW - margin - 168, 50);
+    doc.fillColor(gray).font(regular).fontSize(8).text(new Date().toLocaleDateString("en-GB"), pageW - margin - 168, 66);
+  }
+
+  function drawTableHeader(y) {
+    const cols = [
+      { label: "#", x: margin, w: 22, align: "center" },
+      { label: "Channel", x: margin + 24, w: 142 },
+      { label: "Network", x: margin + 170, w: 76 },
+      { label: "Revenue USD", x: margin + 250, w: 72, align: "right" },
+      { label: "Share", x: margin + 326, w: 38, align: "center" },
+      { label: "Share USD", x: margin + 368, w: 68, align: "right" },
+      { label: `Paid ${currency}`, x: margin + 440, w: contentW - 440, align: "right" }
+    ];
+    doc.roundedRect(margin, y, contentW, 26, 8).fill(primary);
+    doc.fillColor("white").font(boldPdf).fontSize(7.5);
+    cols.forEach((col) => doc.text(col.label, col.x + 4, y + 9, { width: col.w - 8, align: col.align || "left" }));
+    return cols;
+  }
+
+  function addContentPage() {
+    doc.addPage();
+    pageChrome();
+    doc.fillColor(primaryDark).font(boldPdf).fontSize(12).text("Channel revenue details", margin, 34);
+    doc.fillColor(gray).font(regular).fontSize(9).text(`${text(detail.group_name)} - ${monthTitle(detail.month)}`, margin, 52);
+    return drawTableHeader(82);
+  }
+
+  drawHeader();
+
+  const topCardsY = 120;
+  card(margin, topCardsY, (contentW - 14) / 2, 142, "Invoice From", [
+    { label: "Company", value: company.company_name },
+    { label: "Phone / Email", value: `${text(company.phone)} / ${text(company.email)}` },
+    { label: "Address", value: company.address, height: 48 }
+  ]);
+  card(margin + (contentW + 14) / 2, topCardsY, (contentW - 14) / 2, 142, "Invoice To", [
+    { label: "Partner", value: detail.partner_name || detail.display_name },
+    { label: "Phone / Email", value: `${text(detail.phone)} / ${text(detail.email)}` },
+    { label: "Address", value: detail.address, height: 48 }
+  ]);
+
+  const statsY = 282;
+  summaryBox(margin, statsY, 122, "Total Revenue USD", moneyText(detail.summary.total_revenue_usd || 0, "USD"), moneyText(detail.summary.total_revenue_converted || 0, currency), pale2);
+  summaryBox(margin + 134, statsY, 122, "Share Amount USD", moneyText(detail.summary.paid_usd || 0, "USD"), moneyText(detail.summary.paid_converted || 0, currency), pale2);
+  summaryBox(margin + 268, statsY, 122, `Fee ${Number(detail.summary.fee_rate || 0)}%`, moneyText(detail.summary.fee_converted || 0, currency), moneyText(detail.summary.fee_usd || 0, "USD"), pale2);
+  summaryBox(margin + 402, statsY, contentW - 402, `Payable ${currency}`, moneyText(detail.summary.payable_converted || 0, currency), moneyText(detail.summary.payable_usd || 0, "USD"), pale);
+
+  doc.fillColor(dark).font(boldPdf).fontSize(12).text("Revenue Detail", margin, 368);
+  let cols = drawTableHeader(392);
+  let y = 424;
+
+  detail.channels.forEach((channel, index) => {
+    const note = channel.status === "error" ? channel.status_error || "Could not fetch YouTube data" : "";
+    const channelTitle = singleLine(channel.title || "Channel error / die", 36);
+    const channelId = singleLine(channel.channel_id || "", 34);
+    const networkName = singleLine(channel.network_name || "-", 18);
+    const rowHeight = note ? 48 : 38;
+    if (y + rowHeight > pageH - 76) {
+      cols = addContentPage();
+      y = 116;
+    }
+
+    doc.roundedRect(margin, y, contentW, rowHeight, 8).fillAndStroke(index % 2 ? "white" : pale2, "#E4F3EA");
+    doc.fillColor(dark).font(regular).fontSize(8);
+    doc.text(String(index + 1), cols[0].x + 4, y + 11, { width: cols[0].w - 8, align: "center" });
+    doc.font(boldPdf).text(channelTitle, cols[1].x + 4, y + 8, { width: cols[1].w - 8, lineBreak: false });
+    doc.fillColor(primaryDark).font(regular).fontSize(7).text(channelId, cols[1].x + 4, y + 22, { width: cols[1].w - 8, lineBreak: false });
+    if (note) doc.fillColor("#DC2626").fontSize(6.5).text(singleLine(note, 62), cols[1].x + 4, y + 34, { width: cols[1].w + cols[2].w, lineBreak: false });
+    doc.fillColor(dark).font(regular).fontSize(8).text(networkName, cols[2].x + 4, y + 12, { width: cols[2].w - 8, lineBreak: false });
+    doc.text(moneyText(channel.revenue_usd || 0, "USD"), cols[3].x + 4, y + 12, { width: cols[3].w - 8, align: "right" });
+    doc.text(`${Number(channel.applied_share || 0).toLocaleString("en-US", { maximumFractionDigits: 2 })}%`, cols[4].x + 4, y + 12, { width: cols[4].w - 8, align: "center" });
+    doc.text(moneyText(channel.share_amount || 0, "USD"), cols[5].x + 4, y + 12, { width: cols[5].w - 8, align: "right" });
+    doc.font(boldPdf).fillColor(primaryDark).text(moneyText(channel.paid ?? channel.share_amount_converted ?? 0, currency), cols[6].x + 4, y + 12, { width: cols[6].w - 8, align: "right" });
+    y += rowHeight + 6;
   });
 
-  const summaryY = Math.min(y + 8, 600);
-  doc.font(boldPdf).fontSize(11).fillColor(dark);
-  doc.text("SUB TOTAL", mainX, summaryY).text(moneyText(detail.summary.paid_converted || 0, currency), mainX + 145, summaryY, { width: 90, align: "right" });
-  doc.text(`FEE (${Number(detail.summary.fee_rate || 0)}%)`, mainX, summaryY + 18).text(moneyText(detail.summary.fee_converted || 0, currency), mainX + 145, summaryY + 18, { width: 90, align: "right" });
-  doc.text("DISCOUNT", mainX, summaryY + 36).text(moneyText(0, currency), mainX + 145, summaryY + 36, { width: 90, align: "right" });
-  doc.text("GRAND TOTAL", mainX, summaryY + 54).text(moneyText(detail.summary.payable_converted || 0, currency), mainX + 145, summaryY + 54, { width: 90, align: "right" });
-  doc.rect(408, summaryY + 10, 128, 52).fill(lightGreen);
-  doc.fillColor("white").fontSize(24).text(moneyText(detail.summary.payable_converted || 0, currency), 414, summaryY + 25, { width: 116, align: "center" });
+  if (y + 210 > pageH - 54) {
+    doc.addPage();
+    pageChrome();
+    y = 56;
+  } else {
+    y += 8;
+  }
 
-  doc.moveTo(mainX, summaryY + 90).lineTo(548, summaryY + 90).lineWidth(1.5).strokeColor(dark).stroke();
-  doc.fillColor(dark).font(boldPdf).fontSize(12).text("PAYMENT INFO", mainX, summaryY + 112);
-  doc.fontSize(9).text("Account Us", mainX, summaryY + 145).font(regular).text(company.account_number || "-", mainX, summaryY + 160);
-  doc.font(boldPdf).text("A/C Name", mainX, summaryY + 182).font(regular).text(company.company_name || "-", mainX, summaryY + 197);
-  doc.font(boldPdf).text("Bank Details", mainX, summaryY + 219).font(regular).text(company.bank_name || "-", mainX, summaryY + 234, { width: 150 });
+  const totalsX = pageW - margin - 226;
+  doc.roundedRect(totalsX, y, 226, 118, 12).fillAndStroke(pale2, line);
+  const totalRows = [
+    ["Subtotal", moneyText(detail.summary.paid_converted || 0, currency)],
+    [`Fee (${Number(detail.summary.fee_rate || 0)}%)`, moneyText(detail.summary.fee_converted || 0, currency)],
+    ["Advance", moneyText(0, currency)]
+  ];
+  totalRows.forEach((row, index) => {
+    doc.fillColor(gray).font(boldPdf).fontSize(8).text(row[0], totalsX + 16, y + 16 + index * 22);
+    doc.fillColor(dark).font(regular).fontSize(9).text(row[1], totalsX + 94, y + 16 + index * 22, { width: 112, align: "right" });
+  });
+  doc.roundedRect(totalsX + 12, y + 82, 202, 24, 8).fill(primary);
+  doc.fillColor("white").font(boldPdf).fontSize(10).text("TOTAL PAYABLE", totalsX + 22, y + 90);
+  doc.text(moneyText(detail.summary.payable_converted || 0, currency), totalsX + 104, y + 90, { width: 100, align: "right" });
 
-  doc.font(boldPdf).fontSize(12).text("PAYMENT INFO", rightX, summaryY + 112);
-  doc.fontSize(9).text("Account Us", rightX, summaryY + 145).font(regular).text(detail.account_number || "-", rightX, summaryY + 160);
-  doc.font(boldPdf).text("A/C Name", rightX, summaryY + 182).font(regular).text(detail.partner_name || "-", rightX, summaryY + 197);
-  doc.font(boldPdf).text("Bank Details", rightX, summaryY + 219).font(regular).text(detail.bank_name || detail.pingpongx || "-", rightX, summaryY + 234, { width: 150 });
+  const payY = y + 142;
+  const bankCardHeight = 142;
+  card(margin, payY, (contentW - 14) / 2, bankCardHeight, "Company Bank Details", [
+    { label: "Account Name", value: company.company_name, height: 38 },
+    { label: "Account Number", value: company.account_number, height: 34 },
+    { label: "Bank", value: company.bank_name, height: 44 }
+  ]);
+  card(margin + (contentW + 14) / 2, payY, (contentW - 14) / 2, bankCardHeight, "Partner Payment Details", [
+    { label: "Account Name", value: detail.partner_name, height: 38 },
+    { label: "Account Number", value: detail.account_number, height: 34 },
+    { label: "Bank / PingPongX", value: detail.bank_name || detail.pingpongx, height: 44 }
+  ]);
 
-  doc.rect(sideW, pageH - 36, pageW - sideW, 36).fill(lightGreen);
-  doc.fillColor("white").font(boldPdf).fontSize(18).text("T H A N K S  Y O U R  B U S I N E S S", sideW + 38, pageH - 25);
+  doc.fillColor(gray).font(regular).fontSize(8).text(
+    "This invoice is generated from monthly YouTube revenue reconciliation data. Revenue USD, share amount USD, paid currency, exchange rate, and fee follow the same calculation rules as the Excel export.",
+    margin,
+    payY + bankCardHeight + 20,
+    { width: contentW, align: "center" }
+  );
   doc.end();
 
   const buffer = await finished;
@@ -1044,6 +1184,9 @@ function dashboardGroupTotals(month = "") {
         partnerMap.set(partnerId, {
           partner_id: partnerId,
           partner_name: detail.display_name || detail.partner_name || "-",
+          group_id: detail.id,
+          group_name: detail.group_name,
+          best_group_revenue_usd: groupRevenue,
           revenue_usd: 0,
           paid_usd: 0,
           profit_usd: 0,
@@ -1052,6 +1195,11 @@ function dashboardGroupTotals(month = "") {
       }
 
       const partner = partnerMap.get(partnerId);
+      if (groupRevenue > Number(partner.best_group_revenue_usd || 0)) {
+        partner.group_id = detail.id;
+        partner.group_name = detail.group_name;
+        partner.best_group_revenue_usd = groupRevenue;
+      }
       partner.revenue_usd += groupRevenue;
       partner.paid_usd += groupPaid;
       partner.profit_usd += groupRevenue - groupPaid;
@@ -1487,14 +1635,22 @@ exports.deletePartner = (req, res) => {
 exports.getGroups = (req, res) => {
   try {
     const month = String(req.query.month || "");
+    const allowedGroupIds = isPartnerUser(req.user) ? partnerGroupIds(req.user.id) : null;
+
+    if (allowedGroupIds && allowedGroupIds.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const groupWhere = allowedGroupIds ? `WHERE g.id IN (${allowedGroupIds.map(() => "?").join(",")})` : "";
     const groups = db.prepare(`
       SELECT g.*, p.partner_name, COUNT(gc.id) AS channel_count
       FROM channel_groups g
       JOIN partners p ON p.id = g.partner_id
       LEFT JOIN group_channels gc ON gc.group_id = g.id
+      ${groupWhere}
       GROUP BY g.id
       ORDER BY g.updated_at DESC, g.id DESC
-    `).all().map(parseGroup).map((group) => {
+    `).all(...(allowedGroupIds || [])).map(parseGroup).map((group) => {
       const detail = groupDetail(group.id, month);
       return { ...group, summary: detail?.summary || null };
     });
@@ -1540,6 +1696,7 @@ exports.updateGroup = (req, res) => {
 
 exports.deleteGroup = (req, res) => {
   try {
+    db.prepare("DELETE FROM user_group_permissions WHERE group_id = ?").run(req.params.id);
     db.prepare("DELETE FROM group_channels WHERE group_id = ?").run(req.params.id);
     db.prepare("DELETE FROM channel_groups WHERE id = ?").run(req.params.id);
     res.json({ success: true, message: "Đã xóa group" });
@@ -1550,6 +1707,9 @@ exports.deleteGroup = (req, res) => {
 
 exports.getGroupDetail = (req, res) => {
   try {
+    if (!canUserReadGroup(req.user, req.params.id)) {
+      return res.status(403).json({ success: false, message: "You do not have access to this group" });
+    }
     const detail = groupDetail(req.params.id, String(req.query.month || ""));
     if (!detail) return res.status(404).json({ success: false, message: "Không tìm thấy group" });
     res.json({ success: true, data: detail });
@@ -1560,6 +1720,9 @@ exports.getGroupDetail = (req, res) => {
 
 exports.exportGroupExcel = async (req, res) => {
   try {
+    if (!canUserReadGroup(req.user, req.params.id)) {
+      return res.status(403).json({ success: false, message: "You do not have access to this group" });
+    }
     const detail = groupDetail(req.params.id, String(req.body?.month || req.query.month || ""));
     if (!detail) return res.status(404).json({ success: false, message: "Group not found" });
     await sendExcelExport(res, detail, selectedCompany(req.body?.company_id || req.query.company_id));
@@ -1570,6 +1733,9 @@ exports.exportGroupExcel = async (req, res) => {
 
 exports.exportGroupPdf = async (req, res) => {
   try {
+    if (!canUserReadGroup(req.user, req.params.id)) {
+      return res.status(403).json({ success: false, message: "You do not have access to this group" });
+    }
     const detail = groupDetail(req.params.id, String(req.body?.month || req.query.month || ""));
     if (!detail) return res.status(404).json({ success: false, message: "Group not found" });
     await sendPdfExport(res, detail, selectedCompany(req.body?.company_id || req.query.company_id), {

@@ -18,7 +18,7 @@ function authMiddleware(req, res, next) {
 
     const user = db
       .prepare(`
-        SELECT id, full_name, email, role, status, created_at, updated_at
+        SELECT id, full_name, email, role, status, two_factor_enabled, created_at, updated_at
         FROM users
         WHERE id = ?
       `)

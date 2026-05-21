@@ -69,10 +69,20 @@ db.exec(`
     password TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'user',
     status TEXT NOT NULL DEFAULT 'active',
+    two_factor_enabled INTEGER NOT NULL DEFAULT 0,
+    two_factor_secret TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
+
+const userColumns = db.prepare("PRAGMA table_info(users)").all();
+if (!userColumns.some((column) => column.name === "two_factor_enabled")) {
+  db.exec("ALTER TABLE users ADD COLUMN two_factor_enabled INTEGER NOT NULL DEFAULT 0");
+}
+if (!userColumns.some((column) => column.name === "two_factor_secret")) {
+  db.exec("ALTER TABLE users ADD COLUMN two_factor_secret TEXT");
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS videos (
@@ -256,7 +266,108 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS user_group_permissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, group_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (group_id) REFERENCES channel_groups(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS content_id_products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label_id INTEGER,
+    album_title TEXT NOT NULL,
+    album_artist TEXT,
+    album_upc TEXT,
+    genre TEXT,
+    label TEXT,
+    release_date TEXT,
+    ownership TEXT,
+    match_policy TEXT,
+    ddex_party_id TEXT,
+    album_art_filename TEXT,
+    track_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'created',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (label_id) REFERENCES content_id_labels(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS content_id_tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    track_number INTEGER NOT NULL DEFAULT 0,
+    filename TEXT NOT NULL,
+    isrc TEXT NOT NULL,
+    song_title TEXT NOT NULL,
+    artist TEXT,
+    custom_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES content_id_products(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS content_id_labels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS content_id_artists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS content_id_track_artists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id INTEGER NOT NULL,
+    artist_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(track_id, artist_id),
+    FOREIGN KEY (track_id) REFERENCES content_id_tracks(id) ON DELETE CASCADE,
+    FOREIGN KEY (artist_id) REFERENCES content_id_artists(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS content_id_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    code TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'unused',
+    album_title TEXT,
+    song_title TEXT,
+    artist TEXT,
+    product_id INTEGER,
+    track_id INTEGER,
+    notes TEXT,
+    used_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES content_id_products(id) ON DELETE SET NULL,
+    FOREIGN KEY (track_id) REFERENCES content_id_tracks(id) ON DELETE SET NULL
+  );
 `);
+
+db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_codes_type_status ON content_id_codes(type, status)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_products_created ON content_id_products(created_at)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_tracks_product ON content_id_tracks(product_id)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_track_artists_track ON content_id_track_artists(track_id)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_track_artists_artist ON content_id_track_artists(artist_id)");
+
+const contentProductColumns = db.prepare("PRAGMA table_info(content_id_products)").all();
+if (!contentProductColumns.some((column) => column.name === "label_id")) {
+  db.exec("ALTER TABLE content_id_products ADD COLUMN label_id INTEGER");
+}
 
 const groupColumns = db.prepare("PRAGMA table_info(channel_groups)").all();
 const hasGroupFeeRate = groupColumns.some((column) => column.name === "fee_rate");
