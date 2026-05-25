@@ -122,6 +122,7 @@ export function AuthProvider({ children }) {
         canViewPartnerGroups: isAdmin || isReportManager || isPartnerRole,
         canViewChannelManagement: isAdmin || isChannelManagement,
         canViewContentId: isAdmin || isReportManager || isChannelManagement,
+        canViewExpense: isAdmin || isReportManager,
         canViewPartner: isAdmin || isReportManager || isChannelManagement,
         canViewAccount: isAdmin,
         canViewSettings: isAdmin,
