@@ -22,6 +22,10 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+}
+
 input {
   outline: none;
 }
@@ -120,4 +124,20 @@ input {
 
 .theme-dark .sidebar-scroll::-webkit-scrollbar-thumb {
   background: #475569;
+}
+
+.read-only-action-disabled {
+  opacity: 0.38 !important;
+  filter: grayscale(0.35);
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+
+a.read-only-action-disabled,
+label.read-only-action-disabled {
+  pointer-events: none !important;
+}
+
+button.read-only-action-disabled {
+  pointer-events: none;
 }

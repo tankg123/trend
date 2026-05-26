@@ -9,10 +9,33 @@ import {
   Loader2,
   LogOut,
   Lock,
-  Unlock
+  Unlock,
+  Plus,
+  X
 } from "lucide-react";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
+
+const ROLE_OPTIONS = ["admin", "Report Manager", "Channel Management", "Content ID", "Expense", "Partner", "Read Only", "user"];
+
+function roleList(item) {
+  if (Array.isArray(item?.roles)) return item.roles.filter(Boolean);
+  const raw = String(item?.role || "").trim();
+  if (!raw) return ["user"];
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [raw];
+    } catch {
+      return [raw];
+    }
+  }
+  return [raw];
+}
+
+function hasRole(item, role) {
+  return roleList(item).some((value) => String(value).toLowerCase() === String(role).toLowerCase());
+}
 
 export default function AccountPage() {
   const { user, logout, isAdmin } = useAuth();
@@ -21,6 +44,8 @@ export default function AccountPage() {
   const [groups, setGroups] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [message, setMessage] = useState("");
+  const [pendingRole, setPendingRole] = useState({});
+  const [pendingGroup, setPendingGroup] = useState({});
 
   async function fetchUsers() {
     if (!isAdmin) return;
@@ -45,11 +70,9 @@ export default function AccountPage() {
     }
   }
 
-  async function updateRole(id, role) {
+  async function updateRoles(id, roles) {
     try {
-      await api.put(`/auth/users/${id}/role`, {
-        role
-      });
+      await api.put(`/auth/users/${id}/role`, { roles });
 
       setMessage("Đã cập nhật quyền user");
       fetchUsers();
@@ -59,6 +82,27 @@ export default function AccountPage() {
           "Lỗi cập nhật quyền user"
       );
     }
+  }
+
+  function addRole(item) {
+    const nextRole = pendingRole[item.id];
+    if (!nextRole) return;
+
+    let nextRoles = roleList(item);
+    if (nextRole === "admin") {
+      nextRoles = nextRoles.includes("Read Only") ? ["admin", "Read Only"] : ["admin"];
+    } else {
+      nextRoles = nextRoles.filter((role) => role !== "admin" && role !== "user");
+      nextRoles = [...new Set([...nextRoles, nextRole])];
+    }
+
+    updateRoles(item.id, nextRoles);
+    setPendingRole((current) => ({ ...current, [item.id]: "" }));
+  }
+
+  function removeRole(item, role) {
+    const nextRoles = roleList(item).filter((value) => value !== role);
+    updateRoles(item.id, nextRoles.length ? nextRoles : ["user"]);
   }
 
   async function updateStatus(id, status) {
@@ -77,15 +121,30 @@ export default function AccountPage() {
     }
   }
 
-  async function updatePartnerGroups(id, selectedOptions) {
+  async function updatePartnerGroups(id, groupIds) {
     try {
-      const groupIds = [...selectedOptions].map((option) => Number(option.value));
       await api.put(`/auth/users/${id}/groups`, { group_ids: groupIds });
       setMessage("Đã cập nhật group cho Partner");
       fetchUsers();
     } catch (error) {
       setMessage(error.response?.data?.message || "Lỗi cập nhật group cho Partner");
     }
+  }
+
+  function addPartnerGroup(item) {
+    const groupId = Number(pendingGroup[item.id]);
+    if (!groupId) return;
+
+    const currentIds = (item.assigned_groups || []).map((group) => Number(group.id));
+    updatePartnerGroups(item.id, [...new Set([...currentIds, groupId])]);
+    setPendingGroup((current) => ({ ...current, [item.id]: "" }));
+  }
+
+  function removePartnerGroup(item, groupId) {
+    const nextIds = (item.assigned_groups || [])
+      .map((group) => Number(group.id))
+      .filter((id) => id !== Number(groupId));
+    updatePartnerGroups(item.id, nextIds);
   }
 
   async function deleteUser(id) {
@@ -174,7 +233,7 @@ export default function AccountPage() {
           </h3>
 
           <div className="mt-3 inline-flex px-4 py-2 rounded-full bg-slate-900 text-white font-bold uppercase">
-            {user?.role}
+            {(user?.roles || [user?.role]).filter(Boolean).join(", ")}
           </div>
         </div>
 
@@ -247,19 +306,40 @@ export default function AccountPage() {
                       {item.email}
                     </td>
 
-                    <td className="p-4">
-                      <select
-                        value={item.role}
-                        onChange={(e) => updateRole(item.id, e.target.value)}
-                        disabled={item.id === user.id}
-                        className="bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 font-bold uppercase disabled:opacity-50"
-                      >
-                        <option value="admin">admin</option>
-                        <option value="Report Manager">Report Manager</option>
-                        <option value="Channel Management">Channel Management</option>
-                        <option value="Partner">Partner</option>
-                        <option value="user">user</option>
-                      </select>
+                    <td className="p-4 min-w-[300px]">
+                      <div className="flex flex-wrap gap-2">
+                        {roleList(item).map((role) => (
+                          <span key={role} className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">
+                            {role}
+                            {item.id !== user.id && role !== "admin" && (
+                              <button type="button" onClick={() => removeRole(item, role)} className="text-blue-400 hover:text-red-500">
+                                <X size={13} />
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                      {item.id !== user.id && (
+                        <div className="mt-2 flex gap-2">
+                          <select
+                            value={pendingRole[item.id] || ""}
+                            onChange={(event) => setPendingRole((current) => ({ ...current, [item.id]: event.target.value }))}
+                            className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold"
+                          >
+                            <option value="">Add role</option>
+                            {ROLE_OPTIONS.filter((role) => !roleList(item).includes(role)).map((role) => (
+                              <option key={role} value={role}>{role}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => addRole(item)}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white"
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </div>
+                      )}
                     </td>
 
                     <td className="p-4">
@@ -275,22 +355,43 @@ export default function AccountPage() {
                       </span>
                     </td>
 
-                    <td className="p-4 min-w-[280px]">
-                      {String(item.role || "").toLowerCase() === "partner" ? (
-                        <div>
-                          <select
-                            multiple
-                            value={(item.assigned_groups || []).map((group) => String(group.id))}
-                            onChange={(event) => updatePartnerGroups(item.id, event.target.selectedOptions)}
-                            className="w-full min-h-[92px] bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold"
-                          >
-                            {groups.map((group) => (
-                              <option key={group.id} value={group.id}>
+                    <td className="p-4 min-w-[360px]">
+                      {hasRole(item, "Partner") ? (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            {(item.assigned_groups || []).map((group) => (
+                              <span key={group.id} className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
                                 {group.group_name} - {group.partner_name}
-                              </option>
+                                <button type="button" onClick={() => removePartnerGroup(item, group.id)} className="text-emerald-500 hover:text-red-500">
+                                  <X size={13} />
+                                </button>
+                              </span>
                             ))}
-                          </select>
-                          <p className="mt-1 text-xs text-slate-400">Hold Ctrl to select multiple groups.</p>
+                            {!(item.assigned_groups || []).length && <span className="text-xs text-slate-400">No groups assigned</span>}
+                          </div>
+                          <div className="flex gap-2">
+                            <select
+                              value={pendingGroup[item.id] || ""}
+                              onChange={(event) => setPendingGroup((current) => ({ ...current, [item.id]: event.target.value }))}
+                              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold"
+                            >
+                              <option value="">Add partner group</option>
+                              {groups
+                                .filter((group) => !(item.assigned_groups || []).some((assigned) => Number(assigned.id) === Number(group.id)))
+                                .map((group) => (
+                                  <option key={group.id} value={group.id}>
+                                    {group.group_name} - {group.partner_name}
+                                  </option>
+                                ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => addPartnerGroup(item)}
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white"
+                            >
+                              <Plus size={16} />
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <span className="text-slate-400">-</span>

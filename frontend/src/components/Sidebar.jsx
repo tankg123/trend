@@ -9,6 +9,7 @@ import {
   Disc3,
   FileAudio,
   FileSpreadsheet,
+  FileVideo,
   Landmark,
   Network,
   PackageSearch,
@@ -31,7 +32,7 @@ const logoColors = ["#2f8ccf", "#0f9f6e", "#7c3aed", "#ef4444", "#f59e0b", "#089
 
 export default function Sidebar() {
   const location = useLocation();
-  const { canViewReports, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewPartnerGroups } = useAuth();
+  const { canViewReports, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
   const { t } = useI18n();
   const { theme } = useTheme();
   const { settings } = useSystemSettings();
@@ -40,7 +41,7 @@ export default function Sidebar() {
   const logoColor = useMemo(() => logoColors[Math.floor(Math.random() * logoColors.length)], []);
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
   const reportPaths = ["/report-dashboard", "/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
-  const contentIdPaths = ["/content-id/creator", "/content-id/products", "/content-id/labels", "/content-id/artists"];
+  const contentIdPaths = ["/content-id/creator", "/content-id/web-assets", "/content-id/products", "/content-id/labels", "/content-id/artists"];
   const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
   const settingsPaths = ["/settings/system", "/settings/content-id"];
   const [channelOpen, setChannelOpen] = useState(channelPaths.includes(location.pathname) || location.pathname === "/");
@@ -73,7 +74,7 @@ export default function Sidebar() {
   const settingsMenus = [
     { name: t("systemSettings"), path: "/settings/system", icon: Settings },
     { name: "Content ID Setting", path: "/settings/content-id", icon: Disc3 }
-  ];
+  ].filter((item) => item.path === "/settings/system" ? canViewSettings : canViewContentIdSettings);
 
   return (
     <aside
@@ -230,6 +231,7 @@ export default function Sidebar() {
               <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
                 {[
                   { name: "Creator Soundrecording & Art", path: "/content-id/creator", icon: FileAudio },
+                  { name: "Web Asset Reference", path: "/content-id/web-assets", icon: FileVideo },
                   { name: "Product Manager", path: "/content-id/products", icon: PackageSearch },
                   { name: "Label", path: "/content-id/labels", icon: Tags },
                   { name: "Artist", path: "/content-id/artists", icon: UserRound }
@@ -360,7 +362,7 @@ export default function Sidebar() {
 
       </nav>
 
-      {canViewSettings && (
+      {(canViewSettings || canViewContentIdSettings) && (
         <div className={["shrink-0 border-t p-3", isDark ? "border-slate-800" : "border-slate-200"].join(" ")}>
           <button
             type="button"

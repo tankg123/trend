@@ -91,7 +91,17 @@ export default function ChannelManagementPage() {
     if (!id) return "";
     const item = sharings.find((sharing) => String(sharing.id) === String(id));
     if (!item) return "";
-    return `${item.name || `${item.share_rate}%`} (${Number(item.share_rate || 0)}%)`;
+    return item.name || `${Number(item.share_rate || 0)}%`;
+  }
+
+  function sharingOptionLabel(sharing) {
+    if (!sharing) return "";
+    return sharing.name || `${Number(sharing.share_rate || 0)}%`;
+  }
+
+  function channelPartnerSharingLabel(channel) {
+    if (!channel?.revenue_sharing_name && channel?.revenue_share_rate == null) return "No partner sharing";
+    return channel.revenue_sharing_name || `${Number(channel.revenue_share_rate || 0)}%`;
   }
 
   function validateBulkSharingForm(form) {
@@ -610,7 +620,7 @@ export default function ChannelManagementPage() {
                       <div className="rounded-2xl border border-slate-200 border-l-4 border-l-blue-500 px-3 py-2">
                         <p className="font-black text-slate-900">{channel.partner_display_name || channel.partner_name || "No partner"}</p>
                         <span className="inline-flex mt-2 rounded-lg bg-blue-600 text-white px-2 py-1 text-xs font-black">
-                          {channel.revenue_share_rate != null ? `${channel.revenue_share_rate}% Partner` : "No partner sharing"}
+                          {channelPartnerSharingLabel(channel)}
                         </span>
                       </div>
                     </td>
@@ -688,9 +698,9 @@ export default function ChannelManagementPage() {
               <div className="grid lg:grid-cols-3 gap-4">
                 <SelectBox label="Network" value={bulkForm.network_id} onChange={(v) => setBulkForm({ ...bulkForm, network_id: v })} options={networks.map((n) => ({ value: n.id, label: n.name }))} fallback="All networks" />
                 <SelectBox label="Collaborator" value={bulkForm.collaborator_id} onChange={(v) => setBulkForm({ ...bulkForm, collaborator_id: v })} options={collaborators.map((c) => ({ value: c.id, label: c.display_name || c.name }))} fallback="No collaborator" />
-                <SelectBox label="Colab Revenue Sharing" value={bulkForm.colab_sharing_id} onChange={(v) => setBulkForm({ ...bulkForm, colab_sharing_id: v })} options={sharings.map((s) => ({ value: s.id, label: `${s.name} (${s.share_rate}%)` }))} fallback="No colab revenue sharing" />
+                <SelectBox label="Colab Revenue Sharing" value={bulkForm.colab_sharing_id} onChange={(v) => setBulkForm({ ...bulkForm, colab_sharing_id: v })} options={sharings.map((s) => ({ value: s.id, label: sharingOptionLabel(s) }))} fallback="No colab revenue sharing" />
                 <SelectBox label="Partner" value={bulkForm.partner_id} onChange={(v) => setBulkForm({ ...bulkForm, partner_id: v })} options={partners.map((p) => ({ value: p.id, label: p.display_name || p.partner_name }))} fallback="All partners" />
-                <SelectBox label="Revenue Sharing" value={bulkForm.sharing_id} onChange={(v) => setBulkForm({ ...bulkForm, sharing_id: v })} options={sharings.map((s) => ({ value: s.id, label: `${s.share_rate}%` }))} fallback="All revenue sharings" />
+                <SelectBox label="Revenue Sharing" value={bulkForm.sharing_id} onChange={(v) => setBulkForm({ ...bulkForm, sharing_id: v })} options={sharings.map((s) => ({ value: s.id, label: sharingOptionLabel(s) }))} fallback="All revenue sharings" />
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                 <b className="text-slate-900">Sharing total:</b> Partner {sharingLabel(bulkForm.sharing_id) || "0%"} + Collaborator {sharingLabel(bulkForm.colab_sharing_id) || "0%"} must be max 100%.

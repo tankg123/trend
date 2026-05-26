@@ -11,6 +11,33 @@ function normalizedRole(role) {
   return String(role || "").trim().toLowerCase();
 }
 
+function parseRoles(value) {
+  if (Array.isArray(value)) {
+    return value.map((role) => String(role || "").trim()).filter(Boolean);
+  }
+
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((role) => String(role || "").trim()).filter(Boolean);
+      }
+    } catch {
+      return [raw];
+    }
+  }
+
+  return [raw];
+}
+
+function hasRole(roles, role) {
+  const target = normalizedRole(role);
+  return roles.map(normalizedRole).includes(target);
+}
+
 function isSuperAdminRole(role) {
   return SUPER_ADMIN_ROLES.includes(normalizedRole(role));
 }
@@ -96,11 +123,17 @@ export function AuthProvider({ children }) {
 
   return (
     (() => {
-      const role = normalizedRole(user?.role);
-      const isAdmin = role === "admin" || isSuperAdminRole(role);
-      const isReportManager = role === "report manager";
-      const isChannelManagement = role === "channel management";
-      const isPartnerRole = role === "partner";
+      const roles = parseRoles(user?.roles?.length ? user.roles : user?.role);
+      const normalizedRoles = roles.map(normalizedRole);
+      const role = normalizedRoles[0] || normalizedRole(user?.role);
+      const isAdmin = hasRole(roles, "admin") || roles.some(isSuperAdminRole);
+      const isReportManager = hasRole(roles, "Report Manager");
+      const isChannelManagement = hasRole(roles, "Channel Management");
+      const isContentIdRole = hasRole(roles, "Content ID");
+      const isExpenseRole = hasRole(roles, "Expense");
+      const isPartnerRole = hasRole(roles, "Partner");
+      const isReadOnly = hasRole(roles, "Read Only");
+      const canViewContentIdSettings = isAdmin || isContentIdRole;
 
       return (
     <AuthContext.Provider
@@ -112,20 +145,26 @@ export function AuthProvider({ children }) {
         updateSavedUser,
         logout,
         role,
-        isSuperAdmin: isSuperAdminRole(role),
+        roles,
+        normalizedRoles,
+        isSuperAdmin: roles.some(isSuperAdminRole),
         isAdmin,
         isReportManager,
         isChannelManagement,
+        isContentIdRole,
+        isExpenseRole,
         isPartnerRole,
+        isReadOnly,
         isManager: isReportManager,
         canViewReports: isAdmin || isReportManager,
         canViewPartnerGroups: isAdmin || isReportManager || isPartnerRole,
         canViewChannelManagement: isAdmin || isChannelManagement,
-        canViewContentId: isAdmin || isReportManager || isChannelManagement,
-        canViewExpense: isAdmin || isReportManager,
+        canViewContentId: isAdmin || isContentIdRole,
+        canViewExpense: isAdmin || isExpenseRole,
         canViewPartner: isAdmin || isReportManager || isChannelManagement,
         canViewAccount: isAdmin,
         canViewSettings: isAdmin,
+        canViewContentIdSettings,
         isUser: role === "user"
       }}
     >

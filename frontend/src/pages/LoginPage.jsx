@@ -50,6 +50,17 @@ export default function LoginPage() {
 
       navigate("/");
     } catch (error) {
+      if (error.response?.data?.requires_verification) {
+        navigate("/verify-email", {
+          state: {
+            email: error.response.data.email || form.email,
+            message: error.response.data.message,
+            fromLogin: true
+          }
+        });
+        return;
+      }
+
       setMessage(
         error.response?.data?.message ||
           (error.code === "ECONNABORTED"

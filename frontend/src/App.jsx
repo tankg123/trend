@@ -7,7 +7,7 @@ import {
   useLocation,
   Navigate
 } from "react-router-dom";
-import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Disc3, FileAudio, FileSpreadsheet, Landmark, Network, PackageSearch, Percent, ReceiptText, Settings, Tags, Users, UsersRound, Video, WalletCards, UserRound, Loader2 } from "lucide-react";
+import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Disc3, FileAudio, FileSpreadsheet, Landmark, Network, PackageSearch, Percent, ReceiptText, Settings, Tags, Users, UsersRound, Video, WalletCards, UserRound, Loader2, FileVideo, Mail, ShieldCheck, Sparkles, LogOut } from "lucide-react";
 
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -18,6 +18,7 @@ import ChannelPage from "./pages/ChannelPage";
 import AccountPage from "./pages/AccountPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import VerifyEmailPage from "./pages/VerifyEmailPage";
 import ManagerReportPage from "./pages/ManagerReportPage";
 import ReportDashboardPage from "./pages/ReportDashboardPage";
 import PartnerPage from "./pages/PartnerPage";
@@ -30,21 +31,87 @@ import ContentIdCreatorPage from "./pages/ContentIdCreatorPage";
 import ContentIdProductsPage from "./pages/ContentIdProductsPage";
 import ContentIdSettingsPage from "./pages/ContentIdSettingsPage";
 import ContentIdCatalogPage from "./pages/ContentIdCatalogPage";
+import ContentIdWebAssetPage from "./pages/ContentIdWebAssetPage";
 import { ExpenseAccountsPage, ExpenseCategoriesPage, ExpenseOverviewPage, ExpenseRevenuePage, ExpenseTransactionsPage } from "./pages/ExpensePages";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { I18nProvider, useI18n } from "./context/I18nContext";
 import { ThemeProvider } from "./context/ThemeContext";
-import { SystemSettingsProvider } from "./context/SystemSettingsContext";
+import { SystemSettingsProvider, useSystemSettings } from "./context/SystemSettingsContext";
 import LanguageToggle from "./components/LanguageToggle";
 import LanguageRuntime from "./components/LanguageRuntime";
+import ReadOnlyRuntime from "./components/ReadOnlyRuntime";
 import ErrorBoundary from "./components/ErrorBoundary";
 
 function LockedPage() {
+  const { user, logout } = useAuth();
+  const { settings } = useSystemSettings();
+  const brandName = settings?.brand_name || "ANS Network";
+
+  function handleLogout() {
+    logout();
+    window.location.href = "/login";
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="max-w-xl rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <h1 className="text-2xl font-black text-slate-900">Account locked</h1>
-        <p className="mt-3 text-slate-500">Your role does not have access to any page. Please contact an admin if you need permissions.</p>
+    <div className="min-h-[calc(100vh-64px)] overflow-hidden bg-[radial-gradient(circle_at_top_left,#dcfce7,transparent_32%),radial-gradient(circle_at_bottom_right,#dbeafe,transparent_36%)] p-6">
+      <div className="mx-auto flex min-h-[calc(100vh-112px)] max-w-5xl items-center justify-center">
+        <section className="relative w-full overflow-hidden rounded-[36px] border border-white/70 bg-white/90 p-8 text-center shadow-2xl shadow-slate-900/10 backdrop-blur lg:p-12">
+          <div className="absolute -left-16 -top-16 h-44 w-44 rounded-full bg-emerald-100 blur-2xl" />
+          <div className="absolute -bottom-20 -right-20 h-56 w-56 rounded-full bg-blue-100 blur-2xl" />
+
+          <div className="relative mx-auto flex h-24 w-24 items-center justify-center rounded-[32px] bg-emerald-600 text-white shadow-xl shadow-emerald-900/20">
+            <Sparkles size={42} />
+          </div>
+
+          <div className="relative mt-8">
+            <p className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-700">
+              <ShieldCheck size={18} />
+              Account created successfully
+            </p>
+
+            <h1 className="mt-5 text-4xl font-black leading-tight text-slate-950 lg:text-5xl">
+              Welcome to {brandName}
+            </h1>
+
+            <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-slate-600 lg:text-lg">
+              Your account is ready, but it does not have an active role yet. Please contact the administrator to assign permissions before using the system.
+            </p>
+
+            <div className="mx-auto mt-8 grid max-w-2xl gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4 text-left md:grid-cols-2">
+              <div className="rounded-2xl bg-white p-4">
+                <p className="text-xs font-black uppercase tracking-wider text-slate-400">Account</p>
+                <p className="mt-1 font-black text-slate-900">{user?.full_name || "New user"}</p>
+                <p className="mt-1 flex items-center gap-2 text-sm text-slate-500">
+                  <Mail size={15} />
+                  {user?.email || "-"}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white p-4">
+                <p className="text-xs font-black uppercase tracking-wider text-slate-400">Next step</p>
+                <p className="mt-1 font-black text-slate-900">Contact administrator</p>
+                <p className="mt-1 text-sm text-slate-500">Ask an admin to add the correct role in Account Management.</p>
+              </div>
+            </div>
+
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <a
+                href="mailto:no-reply@ansnetwork.uk"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 font-black text-white shadow-lg shadow-blue-900/20 hover:bg-blue-700"
+              >
+                <Mail size={18} />
+                Contact admin
+              </a>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-3 font-black text-slate-700 hover:bg-slate-50"
+              >
+                <LogOut size={18} />
+                Sign out
+              </button>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -52,11 +119,11 @@ function LockedPage() {
 
 function MobileNav() {
   const location = useLocation();
-  const { canViewReports, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewPartnerGroups } = useAuth();
+  const { canViewReports, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
   const { t } = useI18n();
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
   const reportPaths = ["/report-dashboard", "/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
-  const contentIdPaths = ["/content-id/creator", "/content-id/products", "/content-id/labels", "/content-id/artists"];
+  const contentIdPaths = ["/content-id/creator", "/content-id/web-assets", "/content-id/products", "/content-id/labels", "/content-id/artists"];
   const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
   const settingsPaths = ["/settings/system", "/settings/content-id"];
   const [channelOpen, setChannelOpen] = useState(channelPaths.includes(location.pathname) || location.pathname === "/");
@@ -134,7 +201,7 @@ function MobileNav() {
       path: "/settings/content-id",
       icon: Disc3
     }
-  ].filter(() => canViewSettings);
+  ].filter((item) => item.path === "/settings/system" ? canViewSettings : canViewContentIdSettings);
 
   return (
     <div className="lg:hidden sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-200 px-4 py-3">
@@ -242,6 +309,7 @@ function MobileNav() {
               <div className="grid grid-cols-2 gap-2 mt-2">
                 {[
                   { name: "Creator CSV", path: "/content-id/creator", icon: FileAudio },
+                  { name: "Web Asset Reference", path: "/content-id/web-assets", icon: FileVideo },
                   { name: "Product Manager", path: "/content-id/products", icon: PackageSearch },
                   { name: "Label", path: "/content-id/labels", icon: Tags },
                   { name: "Artist", path: "/content-id/artists", icon: UserRound }
@@ -335,7 +403,7 @@ function MobileNav() {
             {t("group")}
           </Link>
         )}
-        {canViewSettings && (
+        {(canViewSettings || canViewContentIdSettings) && (
           <div className="col-span-2">
             <div className="grid grid-cols-1 gap-2">
               {settingsMenus.map((item) => {
@@ -364,7 +432,7 @@ function MobileNav() {
 }
 
 function PrivateLayout() {
-  const { user, authLoading, canViewReports, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewPartnerGroups } = useAuth();
+  const { user, authLoading, canViewReports, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
 
   if (authLoading) {
     return (
@@ -378,10 +446,11 @@ function PrivateLayout() {
     return <Navigate to="/login" replace />;
   }
 
-  const defaultPath = canViewChannelManagement ? "/channel-management" : canViewReports ? "/report-dashboard" : canViewExpense ? "/expenses/overview" : canViewContentId ? "/content-id/creator" : canViewPartnerGroups ? "/groups" : canViewPartner ? "/partners" : canViewAccount ? "/account" : canViewSettings ? "/settings/system" : "/locked";
+  const defaultPath = canViewChannelManagement ? "/channel-management" : canViewReports ? "/report-dashboard" : canViewExpense ? "/expenses/overview" : canViewContentId ? "/content-id/creator" : canViewPartnerGroups ? "/groups" : canViewPartner ? "/partners" : canViewAccount ? "/account" : canViewSettings ? "/settings/system" : canViewContentIdSettings ? "/settings/content-id" : "/locked";
 
   return (
     <div className="min-h-screen flex bg-[#f3f6fb]">
+      <ReadOnlyRuntime />
       <Sidebar />
 
       <main className="flex-1 min-w-0">
@@ -511,6 +580,10 @@ function PrivateLayout() {
             element={canViewContentId ? <ContentIdCreatorPage /> : <Navigate to={defaultPath} replace />}
           />
           <Route
+            path="/content-id/web-assets"
+            element={canViewContentId ? <ContentIdWebAssetPage /> : <Navigate to={defaultPath} replace />}
+          />
+          <Route
             path="/content-id/products"
             element={canViewContentId ? <ContentIdProductsPage /> : <Navigate to={defaultPath} replace />}
           />
@@ -531,7 +604,7 @@ function PrivateLayout() {
           <Route path="/account" element={canViewAccount ? <AccountPage /> : <Navigate to={defaultPath} replace />} />
           <Route path="/settings" element={<Navigate to="/settings/system" replace />} />
           <Route path="/settings/system" element={canViewSettings ? <SettingsPage /> : <Navigate to={defaultPath} replace />} />
-          <Route path="/settings/content-id" element={canViewSettings ? <ContentIdSettingsPage /> : <Navigate to={defaultPath} replace />} />
+          <Route path="/settings/content-id" element={canViewContentIdSettings ? <ContentIdSettingsPage /> : <Navigate to={defaultPath} replace />} />
           <Route path="/locked" element={<LockedPage />} />
           <Route path="*" element={<Navigate to={defaultPath} replace />} />
         </Routes>
@@ -577,6 +650,15 @@ function AppRoutes() {
         element={
           <PublicRoute>
             <RegisterPage />
+          </PublicRoute>
+        }
+      />
+
+      <Route
+        path="/verify-email"
+        element={
+          <PublicRoute>
+            <VerifyEmailPage />
           </PublicRoute>
         }
       />
