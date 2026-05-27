@@ -1553,10 +1553,259 @@ exports.deleteCompany = (req, res) => {
 
 exports.getPartners = (req, res) => {
   try {
+    syncExpiredPartnerContracts();
     const rows = db.prepare("SELECT * FROM partners ORDER BY updated_at DESC, id DESC").all();
     res.json({ success: true, data: rows });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi lấy partner", error: error.message });
+  }
+};
+
+const PARTNER_IMPORT_HEADERS = {
+  partner_display_name: "display_name",
+  display_name: "display_name",
+  name: "partner_name",
+  partner_name: "partner_name",
+  email: "email",
+  full_name: "contact_name",
+  contact_name: "contact_name",
+  phone_number: "phone",
+  phone: "phone",
+  email_counter_control: "counter_email",
+  counter_email: "counter_email",
+  address: "address",
+  pingpongx: "pingpongx",
+  payment_number: "account_number",
+  account_number: "account_number",
+  bank_name: "bank_name",
+  note: "internal_notes",
+  internal_notes: "internal_notes",
+  contract_status: "contract_status",
+  contract_notes: "contract_notes",
+  contract_sent_at: "contract_sent_at",
+  contract_signed_at: "contract_signed_at",
+  contract_start_at: "contract_start_at",
+  contract_end_at: "contract_end_at",
+  contract_file_name: "contract_file_name",
+  contract_file_data_url: "contract_file_data_url",
+  created_at: "created_at",
+  updated_at: "updated_at"
+};
+
+const PARTNER_CONTRACT_STATUSES = ["incomplete_info", "not_created", "sent_waiting", "done", "renewal_needed"];
+
+function todaySqlDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function syncExpiredPartnerContracts() {
+  db.prepare(`
+    UPDATE partners
+    SET contract_status = 'renewal_needed', updated_at = CURRENT_TIMESTAMP
+    WHERE contract_status = 'done'
+      AND contract_end_at IS NOT NULL
+      AND date(contract_end_at) < date(?)
+  `).run(todaySqlDate());
+}
+
+function normalizeHeader(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "");
+}
+
+function cellText(cell) {
+  const value = cell?.value;
+  if (value == null) return "";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "object") {
+    if (value.text) return String(value.text);
+    if (value.result != null) return String(value.result);
+    if (Array.isArray(value.richText)) return value.richText.map((part) => part.text || "").join("");
+  }
+  return String(cell.text || value || "");
+}
+
+function toSqlDate(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 19).replace("T", " ");
+}
+
+function normalizePartnerImportRow(raw) {
+  const partner = {};
+  Object.entries(raw).forEach(([key, value]) => {
+    const mapped = PARTNER_IMPORT_HEADERS[normalizeHeader(key)];
+    if (!mapped) return;
+    partner[mapped] = String(value || "").trim();
+  });
+
+  partner.partner_name = partner.partner_name || partner.display_name || partner.email || "";
+  partner.display_name = partner.display_name || "";
+  partner.email = partner.email || "";
+  partner.contact_name = partner.contact_name || "";
+  partner.phone = partner.phone || "";
+  partner.counter_email = partner.counter_email || "";
+  partner.address = partner.address || "";
+  partner.pingpongx = partner.pingpongx || "";
+  partner.bank_name = partner.bank_name || "";
+  partner.account_number = partner.account_number || "";
+  partner.internal_notes = partner.internal_notes || "";
+  partner.contract_status = PARTNER_CONTRACT_STATUSES.includes(partner.contract_status) ? partner.contract_status : "not_created";
+  partner.contract_notes = partner.contract_notes || "";
+  partner.contract_sent_at = toSqlDate(partner.contract_sent_at);
+  partner.contract_signed_at = toSqlDate(partner.contract_signed_at);
+  partner.contract_start_at = toSqlDate(partner.contract_start_at);
+  partner.contract_end_at = toSqlDate(partner.contract_end_at);
+  partner.contract_file_name = partner.contract_file_name || "";
+  partner.contract_file_data_url = partner.contract_file_data_url || "";
+  partner.created_at = toSqlDate(partner.created_at);
+  partner.updated_at = toSqlDate(partner.updated_at);
+  return partner;
+}
+
+function validatePartnerContractPayload(status, data) {
+  if (status !== "done") return null;
+  if (!String(data.contract_start_at || "").trim() || !String(data.contract_end_at || "").trim()) {
+    return "Done contract requires a contract start date and end date.";
+  }
+  const start = new Date(data.contract_start_at);
+  const end = new Date(data.contract_end_at);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return "Contract start date and end date must be valid dates.";
+  }
+  if (end < start) {
+    return "Contract end date must be after the start date.";
+  }
+  if (!String(data.contract_file_data_url || "").startsWith("data:application/pdf")) {
+    return "Done contract requires an uploaded signed PDF contract file.";
+  }
+  return null;
+}
+
+exports.importPartners = async (req, res) => {
+  try {
+    const { fileName = "", fileBase64 = "" } = req.body || {};
+    if (!fileBase64) {
+      return res.status(400).json({ success: false, message: "Import file is required" });
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(Buffer.from(String(fileBase64).replace(/^data:.*?;base64,/, ""), "base64"));
+    const worksheet = workbook.worksheets[0];
+    if (!worksheet) {
+      return res.status(400).json({ success: false, message: "Workbook has no sheets" });
+    }
+
+    const headers = [];
+    worksheet.getRow(1).eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      headers[colNumber] = cellText(cell);
+    });
+
+    const insertStmt = db.prepare(`
+      INSERT INTO partners (
+        partner_name, display_name, email, contact_name, phone, counter_email,
+        address, pingpongx, bank_name, account_number, contract_status,
+        contract_notes, contract_sent_at, contract_signed_at, contract_start_at,
+        contract_end_at, contract_file_name, contract_file_data_url, internal_notes,
+        created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), COALESCE(?, CURRENT_TIMESTAMP))
+    `);
+
+    const updateStmt = db.prepare(`
+      UPDATE partners SET
+        partner_name = ?, display_name = ?, email = ?, contact_name = ?, phone = ?,
+        counter_email = ?, address = ?, pingpongx = ?, bank_name = ?,
+        account_number = ?, contract_status = ?, contract_notes = ?, contract_sent_at = ?,
+        contract_signed_at = ?, contract_start_at = ?, contract_end_at = ?, contract_file_name = ?,
+        contract_file_data_url = ?, internal_notes = ?, updated_at = COALESCE(?, CURRENT_TIMESTAMP)
+      WHERE id = ?
+    `);
+
+    const findByEmail = db.prepare("SELECT * FROM partners WHERE lower(email) = lower(?) LIMIT 1");
+    const findByName = db.prepare("SELECT * FROM partners WHERE lower(partner_name) = lower(?) LIMIT 1");
+    const summary = { file_name: fileName, created: 0, updated: 0, skipped: 0, errors: [] };
+
+    const transaction = db.transaction(() => {
+      for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+        const row = worksheet.getRow(rowNumber);
+        const raw = {};
+        headers.forEach((header, colNumber) => {
+          if (header) raw[header] = cellText(row.getCell(colNumber));
+        });
+
+        const partner = normalizePartnerImportRow(raw);
+        if (!partner.partner_name) {
+          summary.skipped += 1;
+          summary.errors.push({ row: rowNumber, message: "Missing partner name" });
+          continue;
+        }
+
+        const existing = partner.email ? findByEmail.get(partner.email) : findByName.get(partner.partner_name);
+        if (existing) {
+          updateStmt.run(
+            partner.partner_name,
+            partner.display_name,
+            partner.email,
+            partner.contact_name,
+            partner.phone,
+            partner.counter_email,
+            partner.address,
+            partner.pingpongx,
+            partner.bank_name,
+            partner.account_number,
+            partner.contract_status,
+            partner.contract_notes,
+            partner.contract_sent_at,
+            partner.contract_signed_at,
+            partner.contract_start_at,
+            partner.contract_end_at,
+            partner.contract_file_name,
+            partner.contract_file_data_url,
+            partner.internal_notes,
+            partner.updated_at,
+            existing.id
+          );
+          summary.updated += 1;
+          continue;
+        }
+
+        insertStmt.run(
+          partner.partner_name,
+          partner.display_name,
+          partner.email,
+          partner.contact_name,
+          partner.phone,
+          partner.counter_email,
+          partner.address,
+          partner.pingpongx,
+          partner.bank_name,
+          partner.account_number,
+          partner.contract_status,
+          partner.contract_notes,
+          partner.contract_sent_at,
+          partner.contract_signed_at,
+          partner.contract_start_at,
+          partner.contract_end_at,
+          partner.contract_file_name,
+          partner.contract_file_data_url,
+          partner.internal_notes,
+          partner.created_at,
+          partner.updated_at
+        );
+        summary.created += 1;
+      }
+    });
+
+    transaction();
+    res.json({ success: true, message: "Partners imported", data: summary });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Could not import partners", error: error.message });
   }
 };
 
@@ -1567,12 +1816,22 @@ exports.createPartner = (req, res) => {
       return res.status(400).json({ success: false, message: "Vui lòng nhập Partner Name" });
     }
 
+    const contractStatus = PARTNER_CONTRACT_STATUSES.includes(String(data.contract_status || ""))
+      ? data.contract_status
+      : "not_created";
+    const contractError = validatePartnerContractPayload(contractStatus, data);
+    if (contractError) {
+      return res.status(400).json({ success: false, message: contractError });
+    }
+
     const result = db.prepare(`
       INSERT INTO partners (
         partner_name, display_name, email, contact_name, phone, counter_email,
-        address, pingpongx, bank_name, account_number, internal_notes
+        address, pingpongx, bank_name, account_number, contract_status,
+        contract_notes, contract_sent_at, contract_signed_at, contract_start_at,
+        contract_end_at, contract_file_name, contract_file_data_url, internal_notes
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       data.partner_name,
       data.display_name || "",
@@ -1584,6 +1843,14 @@ exports.createPartner = (req, res) => {
       data.pingpongx || "",
       data.bank_name || "",
       data.account_number || "",
+      contractStatus,
+      data.contract_notes || "",
+      data.contract_sent_at || null,
+      data.contract_signed_at || null,
+      data.contract_start_at || null,
+      data.contract_end_at || null,
+      data.contract_file_name || "",
+      data.contract_file_data_url || "",
       data.internal_notes || ""
     );
 
@@ -1596,24 +1863,51 @@ exports.createPartner = (req, res) => {
 exports.updatePartner = (req, res) => {
   try {
     const data = req.body || {};
+    const current = db.prepare("SELECT * FROM partners WHERE id = ?").get(req.params.id);
+    if (!current) {
+      return res.status(404).json({ success: false, message: "Partner not found" });
+    }
+    const pick = (key, fallback = "") => Object.prototype.hasOwnProperty.call(data, key) ? data[key] : (current[key] ?? fallback);
+    const contractStatus = PARTNER_CONTRACT_STATUSES.includes(String(pick("contract_status", "not_created")))
+      ? pick("contract_status", "not_created")
+      : "not_created";
+    const contractError = validatePartnerContractPayload(contractStatus, {
+      contract_start_at: pick("contract_start_at", null),
+      contract_end_at: pick("contract_end_at", null),
+      contract_file_data_url: pick("contract_file_data_url", "")
+    });
+    if (contractError) {
+      return res.status(400).json({ success: false, message: contractError });
+    }
+
     db.prepare(`
       UPDATE partners SET
         partner_name = ?, display_name = ?, email = ?, contact_name = ?, phone = ?,
         counter_email = ?, address = ?, pingpongx = ?, bank_name = ?,
-        account_number = ?, internal_notes = ?, updated_at = CURRENT_TIMESTAMP
+        account_number = ?, contract_status = ?, contract_notes = ?, contract_sent_at = ?,
+        contract_signed_at = ?, contract_start_at = ?, contract_end_at = ?, contract_file_name = ?,
+        contract_file_data_url = ?, internal_notes = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
-      data.partner_name,
-      data.display_name || "",
-      data.email || "",
-      data.contact_name || "",
-      data.phone || "",
-      data.counter_email || "",
-      data.address || "",
-      data.pingpongx || "",
-      data.bank_name || "",
-      data.account_number || "",
-      data.internal_notes || "",
+      pick("partner_name"),
+      pick("display_name"),
+      pick("email"),
+      pick("contact_name"),
+      pick("phone"),
+      pick("counter_email"),
+      pick("address"),
+      pick("pingpongx"),
+      pick("bank_name"),
+      pick("account_number"),
+      contractStatus,
+      pick("contract_notes"),
+      pick("contract_sent_at", null) || null,
+      pick("contract_signed_at", null) || null,
+      pick("contract_start_at", null) || null,
+      pick("contract_end_at", null) || null,
+      pick("contract_file_name"),
+      pick("contract_file_data_url"),
+      pick("internal_notes"),
       req.params.id
     );
 

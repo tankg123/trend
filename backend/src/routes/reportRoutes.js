@@ -32,6 +32,7 @@ router.put("/companies/:id", allowRoles(...REPORT_ROLES), reportController.updat
 router.delete("/companies/:id", allowRoles(...REPORT_ROLES), reportController.deleteCompany);
 
 router.get("/partners", allowRoles(...PARTNER_ROLES), reportController.getPartners);
+router.post("/partners/import", allowRoles(...PARTNER_ROLES), reportController.importPartners);
 router.post("/partners", allowRoles(...PARTNER_ROLES), reportController.createPartner);
 router.put("/partners/:id", allowRoles(...PARTNER_ROLES), reportController.updatePartner);
 router.delete("/partners/:id", allowRoles(...PARTNER_ROLES), reportController.deletePartner);

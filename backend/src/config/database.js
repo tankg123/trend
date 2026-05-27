@@ -147,6 +147,14 @@ db.exec(`
     pingpongx TEXT,
     bank_name TEXT,
     account_number TEXT,
+    contract_status TEXT NOT NULL DEFAULT 'not_created',
+    contract_notes TEXT,
+    contract_sent_at DATETIME,
+    contract_signed_at DATETIME,
+    contract_start_at DATETIME,
+    contract_end_at DATETIME,
+    contract_file_name TEXT,
+    contract_file_data_url TEXT,
     internal_notes TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -495,6 +503,32 @@ db.exec(`
     FOREIGN KEY (track_id) REFERENCES content_id_tracks(id) ON DELETE SET NULL
   );
 `);
+
+const partnerColumns = db.prepare("PRAGMA table_info(partners)").all();
+if (!partnerColumns.some((column) => column.name === "contract_status")) {
+  db.exec("ALTER TABLE partners ADD COLUMN contract_status TEXT NOT NULL DEFAULT 'not_created'");
+}
+if (!partnerColumns.some((column) => column.name === "contract_notes")) {
+  db.exec("ALTER TABLE partners ADD COLUMN contract_notes TEXT");
+}
+if (!partnerColumns.some((column) => column.name === "contract_sent_at")) {
+  db.exec("ALTER TABLE partners ADD COLUMN contract_sent_at DATETIME");
+}
+if (!partnerColumns.some((column) => column.name === "contract_signed_at")) {
+  db.exec("ALTER TABLE partners ADD COLUMN contract_signed_at DATETIME");
+}
+if (!partnerColumns.some((column) => column.name === "contract_start_at")) {
+  db.exec("ALTER TABLE partners ADD COLUMN contract_start_at DATETIME");
+}
+if (!partnerColumns.some((column) => column.name === "contract_end_at")) {
+  db.exec("ALTER TABLE partners ADD COLUMN contract_end_at DATETIME");
+}
+if (!partnerColumns.some((column) => column.name === "contract_file_name")) {
+  db.exec("ALTER TABLE partners ADD COLUMN contract_file_name TEXT");
+}
+if (!partnerColumns.some((column) => column.name === "contract_file_data_url")) {
+  db.exec("ALTER TABLE partners ADD COLUMN contract_file_data_url TEXT");
+}
 
 db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_codes_type_status ON content_id_codes(type, status)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_products_created ON content_id_products(created_at)");
