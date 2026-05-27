@@ -157,6 +157,7 @@ export function AuthProvider({ children }) {
         isReadOnly,
         isManager: isReportManager,
         canViewReports: isAdmin || isReportManager,
+        canViewEmail: isAdmin || isReportManager,
         canViewPartnerGroups: isAdmin || isReportManager || isPartnerRole,
         canViewChannelManagement: isAdmin || isChannelManagement,
         canViewContentId: isAdmin || isContentIdRole,

@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
-import { ChevronDown, Eye, EyeOff, Languages, LockKeyhole, LogOut, Moon, Save, Settings, ShieldCheck, Sun, UserRound, X } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Disc3, Eye, EyeOff, FileAudio, FileSignature, FileSpreadsheet, FileVideo, Home, Landmark, Languages, LockKeyhole, LogOut, Mail, Menu, Moon, Network, PackageSearch, Percent, ReceiptText, Save, Settings, ShieldCheck, Sun, Tags, UserRound, Users, UsersRound, Video, WalletCards, X } from "lucide-react";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../context/I18nContext";
 import { useTheme } from "../context/ThemeContext";
+import { useSystemSettings } from "../context/SystemSettingsContext";
 
 const avatarColors = ["#2563eb", "#059669", "#7c3aed", "#dc2626", "#d97706", "#0891b2", "#be185d"];
 
@@ -41,10 +43,13 @@ function PasswordInput({ label, value, onChange, shown, onToggle }) {
 }
 
 export default function Topbar() {
-  const { user, logout, updateSavedUser } = useAuth();
-  const { language, setLanguage } = useI18n();
+  const location = useLocation();
+  const { user, logout, updateSavedUser, canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
+  const { language, setLanguage, t } = useI18n();
   const { theme, setTheme } = useTheme();
+  const { settings } = useSystemSettings();
   const [open, setOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [twoFactorOpen, setTwoFactorOpen] = useState(false);
@@ -56,6 +61,90 @@ export default function Topbar() {
   const [twoFactorForm, setTwoFactorForm] = useState({ code: "", password: "" });
   const [showPasswords, setShowPasswords] = useState({});
   const avatarColor = useMemo(() => randomColor(), []);
+  const useUploadedLogo = settings?.logo_mode === "upload" && settings?.logo_data_url;
+  const brandName = settings?.brand_name || "ANS Network";
+  const subtitle = settings?.brand_subtitle || "MCN Manager System";
+  const hasAnyAppAccess = canViewChannelManagement || canViewReports || canViewEmail || canViewContentId || canViewExpense || canViewPartner || canViewAccount || canViewSettings || canViewContentIdSettings || canViewPartnerGroups;
+  const mobileSections = [
+    {
+      title: "Main",
+      show: hasAnyAppAccess,
+      items: [{ name: "Home", path: "/home", icon: Home }]
+    },
+    {
+      title: "Channel Management",
+      show: canViewChannelManagement,
+      items: [
+        { name: "Channel Management", path: "/channel-management", icon: Video },
+        { name: "Collaborators", path: "/channel-management/collaborators", icon: Users },
+        { name: "Sharing", path: "/channel-management/sharing", icon: Percent }
+      ]
+    },
+    {
+      title: t("report"),
+      show: canViewReports || canViewPartnerGroups,
+      items: [
+        ...(canViewReports ? [
+          { name: "Dashboard", path: "/report-dashboard", icon: BarChart3 },
+          { name: t("report"), path: "/reports", icon: FileSpreadsheet },
+          { name: "Channel", path: "/channels", icon: Video },
+          { name: t("network"), path: "/networks", icon: Network },
+          { name: t("exchangeRates"), path: "/exchange-rates", icon: CircleDollarSign },
+          { name: t("company"), path: "/companies", icon: BriefcaseBusiness }
+        ] : []),
+        ...(canViewReports || canViewPartnerGroups ? [{ name: t("group"), path: "/groups", icon: UsersRound }] : [])
+      ]
+    },
+    {
+      title: "Content ID",
+      show: canViewContentId,
+      items: [
+        { name: "Creator CSV", path: "/content-id/creator", icon: FileAudio },
+        { name: "Web Asset Reference", path: "/content-id/web-assets", icon: FileVideo },
+        { name: "Product Manager", path: "/content-id/products", icon: PackageSearch },
+        { name: "Label", path: "/content-id/labels", icon: Tags },
+        { name: "Artist", path: "/content-id/artists", icon: UserRound }
+      ]
+    },
+    {
+      title: t("expense"),
+      show: canViewExpense,
+      items: [
+        { name: t("overview"), path: "/expenses/overview", icon: BarChart3 },
+        { name: t("expenseGroups"), path: "/expenses/categories", icon: ReceiptText },
+        { name: t("transactions"), path: "/expenses/transactions", icon: FileSpreadsheet },
+        { name: t("accounts"), path: "/expenses/accounts", icon: Landmark },
+        { name: t("revenue"), path: "/expenses/revenue", icon: CircleDollarSign }
+      ]
+    },
+    {
+      title: "Partner & Contract",
+      show: canViewPartner,
+      items: [
+        { name: "Overview", path: "/partners/overview", icon: BarChart3 },
+        { name: "Partner", path: "/partners/list", icon: Building2 },
+        { name: "Contract", path: "/partners/contracts", icon: FileSignature }
+      ]
+    },
+    {
+      title: "Email",
+      show: canViewEmail,
+      items: [{ name: "Email Notification", path: "/email/notification", icon: Mail }]
+    },
+    {
+      title: "Account",
+      show: canViewAccount,
+      items: [{ name: t("account"), path: "/account", icon: UserRound }]
+    },
+    {
+      title: t("settings"),
+      show: canViewSettings || canViewContentIdSettings,
+      items: [
+        ...(canViewSettings ? [{ name: t("systemSettings"), path: "/settings/system", icon: Settings }] : []),
+        ...(canViewContentIdSettings ? [{ name: "Content ID Setting", path: "/settings/content-id", icon: Disc3 }] : [])
+      ]
+    }
+  ].filter((section) => section.show && section.items.length);
   const [form, setForm] = useState({
     full_name: user?.full_name || "",
     email: user?.email || ""
@@ -179,22 +268,37 @@ export default function Topbar() {
   return (
     <>
       <header className="sticky top-0 z-40 h-14 bg-white/95 backdrop-blur border-b border-slate-200 px-4 lg:px-5 flex items-center justify-between">
-        <div className="lg:hidden flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-white border border-slate-200 flex items-center justify-center overflow-hidden">
-            <img src="https://revenue.ansnetwork.vn/images/logo-slideBar.png" alt="ANS" className="w-6 h-6 object-contain" />
+        <div className="lg:hidden flex min-w-0 items-center gap-3">
+          <div className="w-9 h-9 shrink-0 rounded-full bg-white border border-slate-200 flex items-center justify-center overflow-hidden">
+            <img src={useUploadedLogo ? settings.logo_data_url : "https://revenue.ansnetwork.vn/images/logo-slideBar.png"} alt={brandName} className={useUploadedLogo ? "h-full w-full object-cover" : "w-6 h-6 object-contain"} />
           </div>
-          <div>
-            <p className="text-sm font-black text-slate-950">ANS Network</p>
-            <p className="text-[11px] font-bold text-slate-500">MCN Manager System</p>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black text-slate-950">{brandName}</p>
+            <p className="truncate text-[11px] font-bold text-slate-500">{subtitle}</p>
           </div>
         </div>
 
         <div className="hidden lg:block" />
 
-        <div className="relative">
+        <div className="relative flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setOpen((value) => !value)}
+            onClick={() => {
+              setMobileMenuOpen((value) => !value);
+              setOpen(false);
+            }}
+            className="lg:hidden flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm hover:border-blue-200"
+            aria-label="Open navigation"
+          >
+            <Menu size={20} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setOpen((value) => !value);
+              setMobileMenuOpen(false);
+            }}
             className="h-10 rounded-2xl border border-slate-200 bg-white px-2 pr-3 flex items-center gap-2 shadow-sm hover:border-blue-200"
           >
             <span className="w-7 h-7 rounded-full text-white flex items-center justify-center text-xs font-black" style={{ backgroundColor: avatarColor }}>
@@ -206,6 +310,45 @@ export default function Topbar() {
             </span>
             <ChevronDown size={15} className="text-slate-400" />
           </button>
+
+          {mobileMenuOpen && (
+            <div className="absolute right-0 top-12 z-50 max-h-[calc(100vh-76px)] w-[calc(100vw-1.5rem)] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-3 shadow-2xl lg:hidden">
+              <div className="mb-3 flex items-center gap-3 rounded-2xl bg-slate-50 p-3">
+                <img src={useUploadedLogo ? settings.logo_data_url : "https://revenue.ansnetwork.vn/images/logo-slideBar.png"} alt={brandName} className="h-9 w-9 rounded-full object-cover" />
+                <div className="min-w-0">
+                  <p className="truncate font-black text-slate-950">{brandName}</p>
+                  <p className="truncate text-xs font-bold text-slate-500">{subtitle}</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {mobileSections.map((section) => (
+                  <div key={section.title}>
+                    <p className="mb-2 px-2 text-[11px] font-black uppercase tracking-wider text-slate-400">{section.title}</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {section.items.map((item) => {
+                        const Icon = item.icon;
+                        const active = location.pathname === item.path || (location.pathname === "/" && item.path === "/home") || (location.pathname === "/partners" && item.path === "/partners/overview");
+                        return (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            onClick={() => setMobileMenuOpen(false)}
+                            className={[
+                              "flex min-h-12 items-center justify-center gap-2 rounded-2xl px-3 py-2 text-center text-sm font-black",
+                              active ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+                            ].join(" ")}
+                          >
+                            <Icon size={17} />
+                            <span className="leading-tight">{item.name}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {open && (
             <div className="absolute right-0 top-12 w-72 rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">

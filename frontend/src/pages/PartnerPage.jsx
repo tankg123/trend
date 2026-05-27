@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Building2, CreditCard, Edit3, Loader2, Mail, MapPin, Phone, Plus, Trash2, Upload, User, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Building2, CheckCircle2, Copy, CreditCard, Edit3, Link2, Loader2, Mail, MapPin, Phone, Plus, Search, Send, Trash2, Upload, User, X } from "lucide-react";
 import api from "../api/api";
 
 const emptyPartner = {
@@ -10,9 +10,13 @@ const emptyPartner = {
   phone: "",
   counter_email: "",
   address: "",
+  payment_method: "pingpongx",
   pingpongx: "",
   bank_name: "",
+  bank_holder: "",
   account_number: "",
+  swift_code: "",
+  bank_branch: "",
   internal_notes: ""
 };
 
@@ -31,16 +35,57 @@ function Field({ label, icon: Icon, className = "", ...props }) {
   );
 }
 
+function SelectField({ label, value, onChange, children, className = "" }) {
+  return (
+    <label className={className}>
+      <span className="text-sm text-slate-700 mb-2 block">{label}</span>
+      <select
+        value={value}
+        onChange={onChange}
+        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-slate-800 focus:border-blue-500 outline-none"
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
+function normalizePaymentMethod(value) {
+  return String(value || "pingpongx").toLowerCase() === "bank" ? "bank" : "pingpongx";
+}
+
+function paymentLabel(partner) {
+  return normalizePaymentMethod(partner?.payment_method) === "bank" ? "Bank Details" : "PingPongX";
+}
+
 export default function PartnerPage() {
   const [partners, setPartners] = useState([]);
   const [form, setForm] = useState(emptyPartner);
   const [editing, setEditing] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [requestName, setRequestName] = useState("");
+  const [createdRequest, setCreatedRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const fileInputRef = useRef(null);
+
+  const filteredPartners = useMemo(() => {
+    const keyword = searchQuery.trim().toLowerCase();
+    if (!keyword) return partners;
+
+    return partners.filter((partner) => {
+      return [
+        partner.email,
+        partner.partner_name,
+        partner.display_name,
+        partner.contact_name
+      ].some((value) => String(value || "").toLowerCase().includes(keyword));
+    });
+  }, [partners, searchQuery]);
 
   async function fetchPartners() {
     try {
@@ -62,7 +107,7 @@ export default function PartnerPage() {
 
   function openEdit(partner) {
     setEditing(partner);
-    setForm({ ...emptyPartner, ...partner });
+    setForm({ ...emptyPartner, ...partner, payment_method: normalizePaymentMethod(partner.payment_method) });
     setModalOpen(true);
   }
 
@@ -96,6 +141,54 @@ export default function PartnerPage() {
       await fetchPartners();
     } catch (error) {
       setMessage(error.response?.data?.message || "Lỗi xóa partner");
+    }
+  }
+
+  function requestUrl(partner) {
+    const token = partner?.request_token;
+    if (!token) return "";
+    return `${window.location.origin}/partner-request/${token}`;
+  }
+
+  async function copyText(text) {
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+    setMessage("Partner request link copied");
+  }
+
+  async function createPartnerRequest(e) {
+    e.preventDefault();
+    try {
+      setSaving(true);
+      const res = await api.post("/reports/partners/request", { partner_name: requestName });
+      setCreatedRequest(res.data.data || null);
+      setMessage("Partner request link created");
+      await fetchPartners();
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not create partner request");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function approvePartner(id) {
+    try {
+      await api.post(`/reports/partners/${id}/approve`);
+      setMessage("Partner approved and activated");
+      await fetchPartners();
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not approve partner");
+    }
+  }
+
+  async function deleteRequestLink(id) {
+    if (!window.confirm("Delete this partner request link?")) return;
+    try {
+      await api.delete(`/reports/partners/${id}/request-link`);
+      setMessage("Partner request link deleted");
+      await fetchPartners();
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not delete request link");
     }
   }
 
@@ -167,11 +260,40 @@ export default function PartnerPage() {
             {importing ? <Loader2 className="animate-spin" size={18} /> : <Upload size={18} />}
             Import partner
           </button>
+          <button onClick={() => { setRequestOpen(true); setCreatedRequest(null); setRequestName(""); }} className="bg-slate-900 hover:bg-slate-800 text-white rounded-2xl px-5 py-3 font-bold flex items-center justify-center gap-2">
+            <Send size={18} />
+            Add request partner
+          </button>
           <button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl px-5 py-3 font-bold flex items-center justify-center gap-2">
             <Plus size={18} />
             Add partner
           </button>
         </div>
+      </div>
+
+      <div className="mb-5 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+        <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <Search size={19} className="shrink-0 text-slate-400" />
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search email, Partner Name, Display Name, Full Name..."
+            className="min-w-0 flex-1 bg-transparent text-slate-800 outline-none placeholder:text-slate-400"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
+              className="rounded-full bg-slate-200 p-1 text-slate-500 hover:bg-slate-300"
+              aria-label="Clear partner search"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </label>
+        <p className="mt-2 text-sm text-slate-500">
+          Showing {filteredPartners.length} of {partners.length} partners
+        </p>
       </div>
 
       {message && <div className="mb-5 bg-blue-50 border border-blue-100 text-blue-700 rounded-2xl px-5 py-4 font-medium">{message}</div>}
@@ -182,16 +304,44 @@ export default function PartnerPage() {
         </div>
       ) : partners.length === 0 ? (
         <div className="bg-white border border-dashed border-slate-300 rounded-3xl p-12 text-center text-slate-500">Chưa có partner nào.</div>
+      ) : filteredPartners.length === 0 ? (
+        <div className="bg-white border border-dashed border-slate-300 rounded-3xl p-12 text-center text-slate-500">No partner matches this search.</div>
       ) : (
         <div className="grid xl:grid-cols-2 gap-5">
-          {partners.map((partner) => (
+          {filteredPartners.map((partner) => (
             <div key={partner.id} className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
               <div className="flex items-start justify-between gap-4 mb-5">
                 <div>
                   <h2 className="text-xl font-black text-slate-900">{partner.partner_name}</h2>
                   <p className="text-slate-500">{partner.display_name || "No display name"}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className={`rounded-full px-3 py-1 text-xs font-black ${
+                      partner.partner_status === "active"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : partner.partner_status === "request_done"
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-amber-50 text-amber-700"
+                    }`}>
+                      {partner.partner_status === "active" ? "Partner active" : partner.partner_status === "request_done" ? "Request done" : "Request link sent"}
+                    </span>
+                    {partner.request_token && (
+                      <button type="button" onClick={() => copyText(requestUrl(partner))} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                        Copy request link
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="flex gap-2">
+                  {partner.partner_status === "request_done" && (
+                    <button onClick={() => approvePartner(partner.id)} className="w-10 h-10 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 flex items-center justify-center" title="Approve partner">
+                      <CheckCircle2 size={17} />
+                    </button>
+                  )}
+                  {partner.request_token && (
+                    <button onClick={() => deleteRequestLink(partner.id)} className="w-10 h-10 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 flex items-center justify-center" title="Delete request link">
+                      <Link2 size={17} />
+                    </button>
+                  )}
                   <button onClick={() => openEdit(partner)} className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center" title="Edit">
                     <Edit3 size={17} />
                   </button>
@@ -207,11 +357,56 @@ export default function PartnerPage() {
                 <p className="text-slate-500"><b className="text-slate-800">Contact:</b> {partner.contact_name || "-"}</p>
                 <p className="text-slate-500"><b className="text-slate-800">Counter:</b> {partner.counter_email || "-"}</p>
                 <p className="text-slate-500 sm:col-span-2"><b className="text-slate-800">Address:</b> {partner.address || "-"}</p>
-                <p className="text-slate-500"><b className="text-slate-800">Bank:</b> {partner.bank_name || "-"}</p>
-                <p className="text-slate-500"><b className="text-slate-800">Account:</b> {partner.account_number || "-"}</p>
+                <p className="text-slate-500"><b className="text-slate-800">Payment:</b> {paymentLabel(partner)}</p>
+                {normalizePaymentMethod(partner.payment_method) === "bank" ? (
+                  <>
+                    <p className="text-slate-500"><b className="text-slate-800">Bank:</b> {partner.bank_name || "-"}</p>
+                    <p className="text-slate-500"><b className="text-slate-800">Holder:</b> {partner.bank_holder || "-"}</p>
+                    <p className="text-slate-500"><b className="text-slate-800">Account:</b> {partner.account_number || "-"}</p>
+                    <p className="text-slate-500"><b className="text-slate-800">SWIFT:</b> {partner.swift_code || "-"}</p>
+                    <p className="text-slate-500"><b className="text-slate-800">Branch:</b> {partner.bank_branch || "-"}</p>
+                  </>
+                ) : (
+                  <p className="text-slate-500"><b className="text-slate-800">PingPongX:</b> {partner.pingpongx || "-"}</p>
+                )}
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {requestOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4">
+          <form onSubmit={createPartnerRequest} className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl">
+            <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
+              <h2 className="text-2xl font-black text-slate-900">Add request partner</h2>
+              <button type="button" onClick={() => setRequestOpen(false)} className="w-11 h-11 rounded-xl border border-slate-300 flex items-center justify-center">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <Field label="Partner Name *" value={requestName} placeholder="Enter partner name" onChange={(e) => setRequestName(e.target.value)} required />
+              {createdRequest && (
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                  <p className="mb-2 font-black text-blue-800">Request link ready</p>
+                  <div className="flex gap-2">
+                    <input readOnly value={requestUrl(createdRequest)} className="min-w-0 flex-1 rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm text-slate-700" />
+                    <button type="button" onClick={() => copyText(requestUrl(createdRequest))} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 font-black text-white">
+                      <Copy size={16} />
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-5 border-t border-slate-100 flex justify-end gap-3">
+              <button type="button" onClick={() => setRequestOpen(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Close</button>
+              <button type="submit" disabled={saving || !requestName.trim()} className="px-5 py-3 rounded-2xl bg-slate-900 text-white font-bold flex items-center gap-2 disabled:opacity-60">
+                {saving ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
+                Create link
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -257,9 +452,25 @@ export default function PartnerPage() {
                   Payment Details
                 </h3>
                 <div className="grid lg:grid-cols-3 gap-4">
-                  <Field label="PingPongX" value={form.pingpongx} placeholder="PingPongx account" onChange={(e) => setForm({ ...form, pingpongx: e.target.value })} />
-                  <Field label="Bank Name" value={form.bank_name} placeholder="e.g. TPBank, VCB" onChange={(e) => setForm({ ...form, bank_name: e.target.value })} />
-                  <Field label="Account Number" value={form.account_number} placeholder="Bank account" onChange={(e) => setForm({ ...form, account_number: e.target.value })} />
+                  <SelectField
+                    label="Payment Method"
+                    value={normalizePaymentMethod(form.payment_method)}
+                    onChange={(e) => setForm({ ...form, payment_method: e.target.value })}
+                  >
+                    <option value="pingpongx">PingPongX</option>
+                    <option value="bank">Bank Details</option>
+                  </SelectField>
+                  {normalizePaymentMethod(form.payment_method) === "bank" ? (
+                    <>
+                      <Field label="Bank Name" value={form.bank_name} placeholder="e.g. TPBank, VCB" onChange={(e) => setForm({ ...form, bank_name: e.target.value })} />
+                      <Field label="Bank Holder" value={form.bank_holder} placeholder="Account holder name" onChange={(e) => setForm({ ...form, bank_holder: e.target.value })} />
+                      <Field label="Account Number" value={form.account_number} placeholder="Bank account" onChange={(e) => setForm({ ...form, account_number: e.target.value })} />
+                      <Field label="SWIFT Code" value={form.swift_code} placeholder="SWIFT / BIC" onChange={(e) => setForm({ ...form, swift_code: e.target.value })} />
+                      <Field label="Bank Branch" value={form.bank_branch} placeholder="Branch name or address" onChange={(e) => setForm({ ...form, bank_branch: e.target.value })} />
+                    </>
+                  ) : (
+                    <Field className="lg:col-span-2" label="PingPongX Email" value={form.pingpongx} placeholder="partner@pingpongx.com" onChange={(e) => setForm({ ...form, pingpongx: e.target.value })} />
+                  )}
                   <label className="lg:col-span-3">
                     <span className="text-sm text-slate-700 mb-2 block">Internal Notes</span>
                     <textarea

@@ -24,6 +24,9 @@ import ReportDashboardPage from "./pages/ReportDashboardPage";
 import PartnerPage from "./pages/PartnerPage";
 import PartnerOverviewPage from "./pages/PartnerOverviewPage";
 import PartnerContractsPage from "./pages/PartnerContractsPage";
+import PartnerRequestPage from "./pages/PartnerRequestPage";
+import EmailNotificationPage from "./pages/EmailNotificationPage";
+import HomePage from "./pages/HomePage";
 import GroupChannelPage from "./pages/GroupChannelPage";
 import NetworkPage from "./pages/NetworkPage";
 import ExchangeRatePage from "./pages/ExchangeRatePage";
@@ -121,19 +124,21 @@ function LockedPage() {
 
 function MobileNav() {
   const location = useLocation();
-  const { canViewReports, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
+  const { canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
   const { t } = useI18n();
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
   const reportPaths = ["/report-dashboard", "/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
   const contentIdPaths = ["/content-id/creator", "/content-id/web-assets", "/content-id/products", "/content-id/labels", "/content-id/artists"];
   const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
   const partnerPaths = ["/partners", "/partners/overview", "/partners/list", "/partners/contracts"];
+  const emailPaths = ["/email/notification"];
   const settingsPaths = ["/settings/system", "/settings/content-id"];
   const [channelOpen, setChannelOpen] = useState(channelPaths.includes(location.pathname) || location.pathname === "/");
   const [reportOpen, setReportOpen] = useState(reportPaths.includes(location.pathname));
   const [contentIdOpen, setContentIdOpen] = useState(contentIdPaths.includes(location.pathname));
   const [expenseOpen, setExpenseOpen] = useState(expensePaths.includes(location.pathname));
   const [partnerOpen, setPartnerOpen] = useState(partnerPaths.includes(location.pathname));
+  const [emailOpen, setEmailOpen] = useState(emailPaths.includes(location.pathname));
 
   const channelMenus = [
     { name: "Channel Management", path: "/channel-management", icon: Video },
@@ -202,7 +207,7 @@ function MobileNav() {
   ].filter((item) => item.path === "/settings/system" ? canViewSettings : canViewContentIdSettings);
 
   return (
-    <div className="lg:hidden sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-200 px-4 py-3">
+    <div className="hidden">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 font-black text-slate-900">
           <img src="/ans-logo.png" alt="ANS Network" className="h-8 w-8 object-contain" />
@@ -213,7 +218,7 @@ function MobileNav() {
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        {(canViewChannelManagement || canViewReports || canViewContentId || canViewExpense || canViewPartner) && (
+        {(canViewChannelManagement || canViewReports || canViewEmail || canViewContentId || canViewExpense || canViewPartner) && (
           <div className="col-span-2">
             {canViewChannelManagement && (
             <>
@@ -402,6 +407,37 @@ function MobileNav() {
             )}
           </div>
         )}
+        {canViewEmail && (
+          <div className="col-span-2">
+            <button
+              type="button"
+              onClick={() => setEmailOpen((open) => !open)}
+              className={[
+                "w-full flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold mt-2",
+                emailOpen ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+              ].join(" ")}
+            >
+              <Mail size={17} />
+              Email
+              <ChevronDown size={16} className={emailOpen ? "rotate-180 transition" : "transition"} />
+            </button>
+            {emailOpen && (
+              <div className="grid grid-cols-1 gap-2 mt-2">
+                {[
+                  { name: "Email Notification", path: "/email/notification", icon: Mail }
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const active = location.pathname === item.path;
+                  return (
+                    <Link key={item.path} to={item.path} className={["flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-bold", active ? "bg-blue-50 text-blue-700 border border-blue-100" : "bg-slate-50 text-slate-600"].join(" ")}>
+                      <Icon size={16} /> {item.name}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         {menus.map((item) => {
           const Icon = item.icon;
           const active = location.pathname === item.path;
@@ -463,7 +499,7 @@ function MobileNav() {
 }
 
 function PrivateLayout() {
-  const { user, authLoading, canViewReports, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
+  const { user, authLoading, canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
 
   if (authLoading) {
     return (
@@ -477,7 +513,7 @@ function PrivateLayout() {
     return <Navigate to="/login" replace />;
   }
 
-  const defaultPath = canViewChannelManagement ? "/channel-management" : canViewReports ? "/report-dashboard" : canViewExpense ? "/expenses/overview" : canViewContentId ? "/content-id/creator" : canViewPartnerGroups ? "/groups" : canViewPartner ? "/partners/overview" : canViewAccount ? "/account" : canViewSettings ? "/settings/system" : canViewContentIdSettings ? "/settings/content-id" : "/locked";
+  const defaultPath = "/home";
 
   return (
     <div className="min-h-screen flex bg-[#f3f6fb]">
@@ -494,6 +530,10 @@ function PrivateLayout() {
             element={
               <Navigate to={defaultPath} replace />
             }
+          />
+          <Route
+            path="/home"
+            element={<HomePage />}
           />
           <Route
             path="/channel-management"
@@ -656,6 +696,8 @@ function PrivateLayout() {
           <Route path="/expenses/transactions" element={canViewExpense ? <ExpenseTransactionsPage /> : <Navigate to={defaultPath} replace />} />
           <Route path="/expenses/accounts" element={canViewExpense ? <ExpenseAccountsPage /> : <Navigate to={defaultPath} replace />} />
           <Route path="/expenses/revenue" element={canViewExpense ? <ExpenseRevenuePage /> : <Navigate to={defaultPath} replace />} />
+          <Route path="/email" element={<Navigate to="/email/notification" replace />} />
+          <Route path="/email/notification" element={canViewEmail ? <EmailNotificationPage /> : <Navigate to={defaultPath} replace />} />
           <Route path="/account" element={canViewAccount ? <AccountPage /> : <Navigate to={defaultPath} replace />} />
           <Route path="/settings" element={<Navigate to="/settings/system" replace />} />
           <Route path="/settings/system" element={canViewSettings ? <SettingsPage /> : <Navigate to={defaultPath} replace />} />
@@ -680,10 +722,34 @@ function PublicRoute({ children }) {
   }
 
   if (user) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/home" replace />;
   }
 
   return children;
+}
+
+function HomeRoute() {
+  const { user, authLoading } = useAuth();
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f3f6fb]">
+        <Loader2 className="animate-spin text-blue-600" size={42} />
+      </div>
+    );
+  }
+
+  return user ? (
+    <div className="min-h-screen flex bg-[#f3f6fb]">
+      <ReadOnlyRuntime />
+      <Sidebar />
+      <main className="flex-1 min-w-0">
+        <Topbar />
+        <MobileNav />
+        <HomePage />
+      </main>
+    </div>
+  ) : <HomePage publicView />;
 }
 
 function AppRoutes() {
@@ -691,6 +757,10 @@ function AppRoutes() {
     <>
       <LanguageRuntime />
     <Routes>
+      <Route path="/partner-request/:token" element={<PartnerRequestPage />} />
+      <Route path="/" element={<HomeRoute />} />
+      <Route path="/home" element={<HomeRoute />} />
+
       <Route
         path="/login"
         element={

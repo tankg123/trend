@@ -714,7 +714,7 @@ export default function GroupChannelPage() {
     try {
       setLoading(true);
       const requests = canViewReports
-        ? [api.get("/reports/partners"), api.get("/reports/groups", { params: { month } }), api.get("/reports/companies")]
+        ? [api.get("/reports/partners", { params: { scope: "active" } }), api.get("/reports/groups", { params: { month } }), api.get("/reports/companies")]
         : [Promise.resolve({ data: { data: [] } }), api.get("/reports/groups", { params: { month } }), Promise.resolve({ data: { data: [] } })];
       const [partnersRes, groupsRes, companiesRes] = await Promise.all(requests);
       setPartners(partnersRes.data.data || []);

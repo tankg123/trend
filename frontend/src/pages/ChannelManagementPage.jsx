@@ -128,7 +128,7 @@ export default function ChannelManagementPage() {
       const [channelsRes, networksRes, partnersRes, collaboratorsRes, sharingsRes] = await Promise.all([
         api.get("/channels/management", { params }),
         api.get("/reports/networks"),
-        api.get("/reports/partners"),
+        api.get("/reports/partners", { params: { scope: "active" } }),
         api.get("/channels/collaborators"),
         api.get("/channels/revenue-sharings")
       ]);

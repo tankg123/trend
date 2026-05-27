@@ -11,15 +11,28 @@ export const PARTNER_REQUIRED_FIELDS = [
   { key: "email", label: "Email" },
   { key: "contact_name", label: "Contact person" },
   { key: "phone", label: "Phone" },
-  { key: "address", label: "Address" },
-  { key: "bank_name", label: "Bank name" },
-  { key: "account_number", label: "Account number" }
+  { key: "address", label: "Address" }
 ];
 
 export function missingPartnerFields(partner) {
-  return PARTNER_REQUIRED_FIELDS
+  const missing = PARTNER_REQUIRED_FIELDS
     .filter((field) => !String(partner?.[field.key] || "").trim())
     .map((field) => field.label);
+  const paymentMethod = String(partner?.payment_method || "pingpongx").toLowerCase() === "bank" ? "bank" : "pingpongx";
+  const paymentFields = paymentMethod === "bank"
+    ? [
+        { key: "bank_name", label: "Bank name" },
+        { key: "bank_holder", label: "Bank holder" },
+        { key: "account_number", label: "Account number" },
+        { key: "swift_code", label: "SWIFT code" },
+        { key: "bank_branch", label: "Bank branch" }
+      ]
+    : [{ key: "pingpongx", label: "PingPongX email" }];
+
+  paymentFields.forEach((field) => {
+    if (!String(partner?.[field.key] || "").trim()) missing.push(field.label);
+  });
+  return missing;
 }
 
 export function partnerContractStatus(partner) {
