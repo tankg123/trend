@@ -575,15 +575,22 @@ exports.previewChannelsBulk = async (req, res) => {
 
     const managedCache = db.prepare("SELECT * FROM managed_channels WHERE channel_id = ?");
     const reportCache = db.prepare("SELECT * FROM channels WHERE channel_id = ?");
+    const seenChannelIds = new Set();
 
     const data = inputs.map((item) => {
       const youtubeData = youtubeById.get(item.value);
       const channelId = youtubeData?.channel_id || (item.value.startsWith("UC") ? item.value : item.original);
-      const cached = channelId.startsWith("UC")
-        ? (managedCache.get(channelId) || reportCache.get(channelId))
-        : null;
+      const managedExisting = channelId.startsWith("UC") ? managedCache.get(channelId) : null;
+      const reportExisting = channelId.startsWith("UC") ? reportCache.get(channelId) : null;
+      const cached = managedExisting || reportExisting || null;
       const source = youtubeData || cached || {};
       const statusError = errorsByInput.get(item.value) || source.status_error || "";
+      const duplicateInInput = channelId.startsWith("UC") && seenChannelIds.has(channelId);
+      if (channelId.startsWith("UC")) seenChannelIds.add(channelId);
+      const isDuplicate = Boolean(managedExisting || duplicateInInput);
+      const duplicateMessage = duplicateInInput
+        ? "Duplicate in this import list"
+        : "Channel already exists in Channel Management";
 
       return {
         input: item.original,
@@ -593,8 +600,10 @@ exports.previewChannelsBulk = async (req, res) => {
         subscriber_count: Number(source.subscriber_count || 0),
         view_count: Number(source.view_count || 0),
         video_count: Number(source.video_count || 0),
-        status: youtubeData || cached ? (source.status || "active") : (/quota/i.test(statusError) ? "pending" : "error"),
-        status_error: statusError
+        status: isDuplicate ? "duplicate" : (youtubeData || cached ? (source.status || "active") : (/quota/i.test(statusError) ? "pending" : "error")),
+        status_error: isDuplicate ? duplicateMessage : statusError,
+        duplicate: isDuplicate,
+        duplicate_source: duplicateInInput ? "input" : (managedExisting ? "dashboard" : "")
       };
     });
 
@@ -824,6 +833,8 @@ exports.addChannelsBulk = async (req, res) => {
     const errors = [];
     const fetchedByInput = new Map();
     const fetchErrors = new Map();
+    const existingStmt = db.prepare("SELECT id, channel_id, title FROM managed_channels WHERE channel_id = ?");
+    const seenChannelIds = new Set();
 
     const directIds = [...new Set(inputs.map((item) => item.value).filter((value) => value.startsWith("UC")))];
     if (directIds.length) {
@@ -856,6 +867,30 @@ exports.addChannelsBulk = async (req, res) => {
           throw new Error(fetchErrors.get(input.value) || "Channel not found on YouTube");
         }
 
+        if (seenChannelIds.has(data.channel_id)) {
+          errors.push({
+            input: input.original,
+            channel_id: data.channel_id,
+            title: data.title || data.channel_id,
+            duplicate: true,
+            error: "Duplicate in this import list"
+          });
+          continue;
+        }
+        seenChannelIds.add(data.channel_id);
+
+        const existing = existingStmt.get(data.channel_id);
+        if (existing) {
+          errors.push({
+            input: input.original,
+            channel_id: data.channel_id,
+            title: existing.title || data.title || data.channel_id,
+            duplicate: true,
+            error: "Channel already exists in Channel Management"
+          });
+          continue;
+        }
+
         saveManagedChannelData(data, { network_id, partner_id, collaborator_id, sharing_id, colab_sharing_id, note });
         const saved = managedChannelRows(data.channel_id).find((row) => row.channel_id === data.channel_id);
         created.push(saved);
@@ -864,6 +899,24 @@ exports.addChannelsBulk = async (req, res) => {
           ? input.value
           : String(input.original || "").replace(/[^a-zA-Z0-9_-]/g, "");
         if (fallbackId) {
+          if (seenChannelIds.has(fallbackId)) {
+            errors.push({ input: input.original, channel_id: fallbackId, duplicate: true, error: "Duplicate in this import list" });
+            continue;
+          }
+          seenChannelIds.add(fallbackId);
+
+          const existing = existingStmt.get(fallbackId);
+          if (existing) {
+            errors.push({
+              input: input.original,
+              channel_id: fallbackId,
+              title: existing.title || fallbackId,
+              duplicate: true,
+              error: "Channel already exists in Channel Management"
+            });
+            continue;
+          }
+
           const quotaError = isQuotaError(error);
           saveManagedChannelData({
             channel_id: fallbackId,

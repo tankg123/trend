@@ -5,7 +5,7 @@ const db = require("../config/database");
 const { parseRoles } = require("../middlewares/authMiddleware");
 const { sendVerificationEmail } = require("../services/mailService");
 
-const ROLE_OPTIONS = ["admin", "Report Manager", "Channel Management", "Content ID", "Expense", "Partner", "Read Only", "user"];
+const ROLE_OPTIONS = ["admin", "Account", "Report Manager", "Channel Management", "Content ID", "Expense", "Partner", "Read Only", "user"];
 const ROLE_LOOKUP = new Map(ROLE_OPTIONS.map((role) => [role.toLowerCase(), role]));
 ROLE_LOOKUP.set("readonly", "Read Only");
 ROLE_LOOKUP.set("read online", "Read Only");
@@ -33,6 +33,14 @@ function serializeRoles(roles) {
 function userHasRole(user, role) {
   const target = String(role || "").trim().toLowerCase();
   return parseRoles(user?.role).some((item) => item.toLowerCase() === target);
+}
+
+function isAdminUser(user) {
+  return userHasRole(user, "admin");
+}
+
+function isAdminActor(user) {
+  return parseRoles(user?.roles?.length ? user.roles : user?.role).some((role) => String(role).toLowerCase() === "admin");
 }
 
 function isEmail(value = "") {
@@ -668,6 +676,7 @@ exports.changePassword = (req, res) => {
 
 exports.getAllUsers = (req, res) => {
   try {
+    const actorIsAdmin = isAdminActor(req.user);
     const users = db.prepare(`
       SELECT
         u.id, u.full_name, u.email, u.role, u.status, u.two_factor_enabled, u.created_at, u.updated_at,
@@ -694,7 +703,7 @@ exports.getAllUsers = (req, res) => {
         roles,
         assigned_groups: parseJsonArray(item.assigned_groups).filter(Boolean)
       };
-    });
+    }).filter((item) => actorIsAdmin || !item.roles.some((role) => String(role).toLowerCase() === "admin"));
 
     res.json({
       success: true,
@@ -715,6 +724,7 @@ exports.updateUserRole = (req, res) => {
     const { id } = req.params;
     const requestedRoles = Array.isArray(req.body?.roles) ? req.body.roles : [req.body?.role];
     const roles = normalizeRoleList(requestedRoles);
+    const actorIsAdmin = isAdminActor(req.user);
 
     if (!roles.length || roles.some((role) => !ROLE_OPTIONS.includes(role))) {
       return res.status(400).json({
@@ -731,6 +741,20 @@ exports.updateUserRole = (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Không tìm thấy user"
+      });
+    }
+
+    if (!actorIsAdmin && isAdminUser(user)) {
+      return res.status(403).json({
+        success: false,
+        message: "Account role cannot edit admin users"
+      });
+    }
+
+    if (!actorIsAdmin && roles.includes("admin")) {
+      return res.status(403).json({
+        success: false,
+        message: "Account role cannot assign admin role"
       });
     }
 
@@ -782,6 +806,13 @@ exports.updateUserStatus = (req, res) => {
       });
     }
 
+    if (!isAdminActor(req.user) && isAdminUser(user)) {
+      return res.status(403).json({
+        success: false,
+        message: "Account role cannot update admin users"
+      });
+    }
+
     if (Number(req.user.id) === Number(id) && status === "blocked") {
       return res.status(400).json({
         success: false,
@@ -820,6 +851,10 @@ exports.updateUserGroups = (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
+    if (!isAdminActor(req.user) && isAdminUser(user)) {
+      return res.status(403).json({ success: false, message: "Account role cannot update admin users" });
+    }
+
     if (!userHasRole(user, "Partner")) {
       return res.status(400).json({ success: false, message: "Only Partner role can be assigned groups" });
     }
@@ -855,6 +890,21 @@ exports.deleteUser = (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Bạn không thể tự xóa tài khoản của mình"
+      });
+    }
+
+    const target = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+    if (!target) {
+      return res.status(404).json({
+        success: false,
+        message: "KhÃ´ng tÃ¬m tháº¥y user"
+      });
+    }
+
+    if (!isAdminActor(req.user) && isAdminUser(target)) {
+      return res.status(403).json({
+        success: false,
+        message: "Account role cannot delete admin users"
       });
     }
 

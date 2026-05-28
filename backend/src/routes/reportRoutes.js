@@ -40,7 +40,7 @@ router.post("/partners", allowRoles(...PARTNER_ROLES), reportController.createPa
 router.put("/partners/:id", allowRoles(...PARTNER_ROLES), reportController.updatePartner);
 router.delete("/partners/:id", allowRoles(...PARTNER_ROLES), reportController.deletePartner);
 
-router.get("/groups", allowRoles(...GROUP_READ_ROLES), reportController.getGroups);
+router.get("/groups", allowRoles(...GROUP_READ_ROLES, "Account"), reportController.getGroups);
 router.post("/groups", allowRoles(...REPORT_ROLES), reportController.createGroup);
 router.put("/groups/:id", allowRoles(...REPORT_ROLES), reportController.updateGroup);
 router.delete("/groups/:id", allowRoles(...REPORT_ROLES), reportController.deleteGroup);

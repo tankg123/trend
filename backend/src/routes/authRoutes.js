@@ -23,35 +23,35 @@ router.post("/2fa/disable", authMiddleware, authController.disableTwoFactor);
 router.get(
   "/users",
   authMiddleware,
-  allowRoles("admin"),
+  allowRoles("admin", "Account"),
   authController.getAllUsers
 );
 
 router.put(
   "/users/:id/role",
   authMiddleware,
-  allowRoles("admin"),
+  allowRoles("admin", "Account"),
   authController.updateUserRole
 );
 
 router.put(
   "/users/:id/status",
   authMiddleware,
-  allowRoles("admin"),
+  allowRoles("admin", "Account"),
   authController.updateUserStatus
 );
 
 router.put(
   "/users/:id/groups",
   authMiddleware,
-  allowRoles("admin"),
+  allowRoles("admin", "Account"),
   authController.updateUserGroups
 );
 
 router.delete(
   "/users/:id",
   authMiddleware,
-  allowRoles("admin"),
+  allowRoles("admin", "Account"),
   authController.deleteUser
 );
 
