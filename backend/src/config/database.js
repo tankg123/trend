@@ -608,6 +608,11 @@ if (!contentProductColumns.some((column) => column.name === "label_id")) {
   db.exec("ALTER TABLE content_id_products ADD COLUMN label_id INTEGER");
 }
 
+const managedChannelColumns = db.prepare("PRAGMA table_info(managed_channels)").all();
+if (!managedChannelColumns.some((column) => column.name === "unlinked_at")) {
+  db.exec("ALTER TABLE managed_channels ADD COLUMN unlinked_at DATETIME");
+}
+
 const groupColumns = db.prepare("PRAGMA table_info(channel_groups)").all();
 const hasGroupFeeRate = groupColumns.some((column) => column.name === "fee_rate");
 if (!hasGroupFeeRate) {

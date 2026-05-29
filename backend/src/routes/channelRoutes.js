@@ -60,6 +60,13 @@ router.post(
   channelController.syncManagedChannelsBasic
 );
 
+router.post(
+  "/management/:id/unlink",
+  authMiddleware,
+  allowRoles(...CHANNEL_MANAGEMENT_ROLES),
+  channelController.unlinkManagedChannel
+);
+
 router.put(
   "/management/:id",
   authMiddleware,

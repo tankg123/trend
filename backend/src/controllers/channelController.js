@@ -316,8 +316,8 @@ function updateManagedChannelYoutubeData(data) {
         video_count = ?,
         country = ?,
         published_at = ?,
-        status = ?,
-        status_error = ?,
+        status = CASE WHEN status = 'unlinked' THEN status ELSE ? END,
+        status_error = CASE WHEN status = 'unlinked' THEN status_error ELSE ? END,
         updated_at = CURRENT_TIMESTAMP
     WHERE channel_id = ?
   `).run(
@@ -369,6 +369,11 @@ function managedChannelRows(keyword = "", filters = {}) {
   if (filters.sharing_id) {
     where.push("mc.revenue_sharing_id = ?");
     params.push(filters.sharing_id);
+  }
+
+  if (filters.status) {
+    where.push("mc.status = ?");
+    params.push(filters.status);
   }
 
   if (filters.created_from) {
@@ -424,6 +429,10 @@ function validateSharingLimit(partnerSharingId, collaboratorSharingId) {
     return `Partner Sharing and Collaborator Sharing cannot exceed 100% total. Current total is ${total}%.`;
   }
   return null;
+}
+
+function timestampForNote() {
+  return new Date().toISOString().slice(0, 19).replace("T", " ");
 }
 
 function isQuotaError(error) {
@@ -660,6 +669,33 @@ exports.updateManagedChannel = (req, res) => {
     res.json({ success: true, message: "Managed channel updated", data: updated });
   } catch (error) {
     res.status(500).json({ success: false, message: "Could not update managed channel", error: error.message });
+  }
+};
+
+exports.unlinkManagedChannel = (req, res) => {
+  try {
+    const current = db.prepare("SELECT * FROM managed_channels WHERE id = ?").get(req.params.id);
+    if (!current) {
+      return res.status(404).json({ success: false, message: "Managed channel not found" });
+    }
+
+    const unlinkedAt = timestampForNote();
+    const noteLine = `Unlinked at ${unlinkedAt}`;
+    const nextNote = [current.note, noteLine].filter(Boolean).join("\n");
+
+    db.prepare(`
+      UPDATE managed_channels
+      SET status = 'unlinked',
+          note = ?,
+          unlinked_at = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(nextNote, unlinkedAt, current.id);
+
+    const updated = managedChannelRows(current.channel_id).find((row) => row.id === current.id);
+    res.json({ success: true, message: "Managed channel unlinked", data: updated });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Could not unlink managed channel", error: error.message });
   }
 };
 
