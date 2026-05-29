@@ -735,9 +735,27 @@ async function sendExcelExport(res, detail, company) {
   res.send(buffer);
 }
 
+function dataUrlToImageBuffer(value = "") {
+  const match = String(value).match(/^data:image\/(png|jpe?g);base64,(.+)$/i);
+  if (!match) return null;
+  try {
+    return Buffer.from(match[2], "base64");
+  } catch {
+    return null;
+  }
+}
+
+function getUploadedPdfLogo() {
+  const rows = db.prepare("SELECT key, value FROM system_settings WHERE key IN ('logo_mode', 'logo_data_url')").all();
+  const settings = Object.fromEntries(rows.map((row) => [row.key, row.value]));
+  if (settings.logo_mode !== "upload" || !settings.logo_data_url) return null;
+  return dataUrlToImageBuffer(settings.logo_data_url);
+}
+
 async function sendPdfExport(res, detail, company, options = {}) {
   const currency = detail.currency || "USD";
   const fileName = `${safeFileName(detail.group_name || "group")}-${detail.month || "invoice"}.pdf`;
+  const includeSignatures = Boolean(options.includeSignatures);
 
   const doc = new PDFDocument({ size: "A4", margin: 0 });
   const chunks = [];
@@ -774,6 +792,7 @@ async function sendPdfExport(res, detail, company, options = {}) {
   const dark = "#0F172A";
   const gray = "#64748B";
   const logoPath = path.resolve(__dirname, "../../templates/ans-logo.png");
+  const uploadedLogo = getUploadedPdfLogo();
 
   function text(value) {
     return value == null || value === "" ? "-" : String(value);
@@ -782,7 +801,9 @@ async function sendPdfExport(res, detail, company, options = {}) {
   function drawLogo(x, y, size) {
     doc.circle(x + size / 2, y + size / 2, size / 2).fill("white");
     doc.circle(x + size / 2, y + size / 2, size / 2).lineWidth(1).stroke(line);
-    if (fs.existsSync(logoPath)) {
+    if (uploadedLogo) {
+      doc.image(uploadedLogo, x + 6, y + 6, { fit: [size - 12, size - 12], align: "center", valign: "center" });
+    } else if (fs.existsSync(logoPath)) {
       doc.image(logoPath, x + 10, y + 10, { fit: [size - 20, size - 20], align: "center", valign: "center" });
     } else {
       doc.fillColor(primaryDark).font(boldPdf).fontSize(15).text("ANS", x, y + size / 2 - 9, { width: size, align: "center" });
@@ -828,6 +849,17 @@ async function sendPdfExport(res, detail, company, options = {}) {
     doc.fillColor(gray).font(boldPdf).fontSize(7).text(label.toUpperCase(), x + 12, y + 12, { width: w - 24 });
     doc.fillColor(label.includes("PAYABLE") ? primaryDark : dark).font(boldPdf).fontSize(13).text(value, x + 12, y + 28, { width: w - 24 });
     if (subValue) doc.fillColor(gray).font(regular).fontSize(8).text(subValue, x + 12, y + 44, { width: w - 24 });
+  }
+
+  function signatureCard(x, y, w, title) {
+    doc.roundedRect(x, y, w, 104, 12).fillAndStroke("white", line);
+    doc.fillColor(primaryDark).font(boldPdf).fontSize(10).text(title.toUpperCase(), x + 14, y + 14, { width: w - 28 });
+    const rows = ["Sign", "Name", "Title"];
+    rows.forEach((label, index) => {
+      const rowY = y + 42 + index * 19;
+      doc.fillColor(gray).font(boldPdf).fontSize(7).text(label.toUpperCase(), x + 14, rowY, { width: 50 });
+      doc.moveTo(x + 68, rowY + 7).lineTo(x + w - 16, rowY + 7).lineWidth(0.7).stroke("#BFDCCB");
+    });
   }
 
   function drawHeader() {
@@ -916,7 +948,7 @@ async function sendPdfExport(res, detail, company, options = {}) {
     y += rowHeight + 6;
   });
 
-  if (y + 210 > pageH - 54) {
+  if (y + (includeSignatures ? 340 : 210) > pageH - 54) {
     doc.addPage();
     pageChrome();
     y = 56;
@@ -952,10 +984,19 @@ async function sendPdfExport(res, detail, company, options = {}) {
     { label: "Bank / PingPongX", value: detail.bank_name || detail.pingpongx, height: 44 }
   ]);
 
+  let noteY = payY + bankCardHeight + 20;
+  if (includeSignatures) {
+    const signY = payY + bankCardHeight + 22;
+    const signW = (contentW - 14) / 2;
+    signatureCard(margin, signY, signW, "Company Signature");
+    signatureCard(margin + signW + 14, signY, signW, "Partner Signature");
+    noteY = signY + 124;
+  }
+
   doc.fillColor(gray).font(regular).fontSize(8).text(
     "This invoice is generated from monthly YouTube revenue reconciliation data. Revenue USD, share amount USD, paid currency, exchange rate, and fee follow the same calculation rules as the Excel export.",
     margin,
-    payY + bankCardHeight + 20,
+    noteY,
     { width: contentW, align: "center" }
   );
   doc.end();
@@ -2245,7 +2286,8 @@ exports.exportGroupPdf = async (req, res) => {
     const detail = groupDetail(req.params.id, String(req.body?.month || req.query.month || ""));
     if (!detail) return res.status(404).json({ success: false, message: "Group not found" });
     await sendPdfExport(res, detail, selectedCompany(req.body?.company_id || req.query.company_id), {
-      base64: Boolean(req.body?.return_base64 || req.query.return_base64)
+      base64: Boolean(req.body?.return_base64 || req.query.return_base64),
+      includeSignatures: Boolean(req.body?.include_signatures || req.query.include_signatures)
     });
   } catch (error) {
     res.status(500).json({ success: false, message: "Could not export PDF", error: error.message });
