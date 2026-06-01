@@ -1340,6 +1340,162 @@ exports.getDashboard = (req, res) => {
   }
 };
 
+function summarizeGroupDetails(details = []) {
+  return details.reduce((summary, detail) => {
+    const item = detail?.summary || {};
+    summary.total_revenue_usd += Number(item.total_revenue_usd || 0);
+    summary.total_paid_usd += Number(item.paid_usd || 0);
+    summary.total_fee_usd += Number(item.fee_usd || 0);
+    summary.total_payable_usd += Number(item.payable_usd || 0);
+    summary.total_remaining_usd += Number(item.remaining_usd || 0);
+    summary.channels += Number(item.channels || 0);
+    summary.rows += Number(item.rows || 0);
+    return summary;
+  }, {
+    total_revenue_usd: 0,
+    total_paid_usd: 0,
+    total_fee_usd: 0,
+    total_payable_usd: 0,
+    total_remaining_usd: 0,
+    channels: 0,
+    rows: 0
+  });
+}
+
+exports.getPartnerDashboard = (req, res) => {
+  try {
+    if (!isPartnerUser(req.user)) {
+      return res.status(403).json({ success: false, message: "Partner dashboard is only available for partner accounts" });
+    }
+
+    const month = String(req.query.month || new Date().toISOString().slice(0, 7));
+    const groupIds = partnerGroupIds(req.user.id);
+
+    if (!groupIds.length) {
+      return res.json({
+        success: true,
+        data: {
+          month,
+          groups: [],
+          monthly: summarizeGroupDetails([]),
+          full: summarizeGroupDetails([]),
+          counts: { groups: 0, channels: 0, active_channels: 0, error_channels: 0 },
+          top_groups: [],
+          top_channels: [],
+          monthly_summaries: []
+        }
+      });
+    }
+
+    const placeholders = groupIds.map(() => "?").join(",");
+    const assignedGroups = db.prepare(`
+      SELECT g.id, g.group_name, g.currency, g.partner_id, p.partner_name, p.display_name AS partner_display_name
+      FROM channel_groups g
+      JOIN partners p ON p.id = g.partner_id
+      WHERE g.id IN (${placeholders})
+      ORDER BY g.group_name COLLATE NOCASE
+    `).all(...groupIds);
+
+    const monthDetails = assignedGroups
+      .map((group) => groupDetail(group.id, month))
+      .filter(Boolean);
+
+    const revenueMonths = db.prepare(`
+      SELECT DISTINCT cr.month
+      FROM channel_revenues cr
+      JOIN group_channels gc ON gc.channel_id = cr.channel_id
+      WHERE gc.group_id IN (${placeholders})
+      ORDER BY cr.month DESC
+    `).all(...groupIds).map((row) => row.month).filter(Boolean);
+    const months = revenueMonths.length ? revenueMonths : [month];
+    const allDetails = months.flatMap((itemMonth) =>
+      assignedGroups.map((group) => groupDetail(group.id, itemMonth)).filter(Boolean)
+    );
+
+    const uniqueChannels = db.prepare(`
+      SELECT
+        COUNT(DISTINCT gc.channel_id) AS total,
+        COUNT(DISTINCT CASE WHEN COALESCE(c.status, 'error') = 'active' THEN gc.channel_id END) AS active,
+        COUNT(DISTINCT CASE WHEN COALESCE(c.status, 'error') != 'active' OR c.status_error IS NOT NULL THEN gc.channel_id END) AS error
+      FROM group_channels gc
+      LEFT JOIN channels c ON c.channel_id = gc.channel_id
+      WHERE gc.group_id IN (${placeholders})
+    `).get(...groupIds);
+
+    const topGroups = monthDetails
+      .map((detail) => ({
+        group_id: detail.id,
+        group_name: detail.group_name,
+        partner_name: detail.partner_display_name || detail.partner_name,
+        currency: detail.currency,
+        channels: Number(detail.summary?.channels || 0),
+        total_revenue_usd: Number(detail.summary?.total_revenue_usd || 0),
+        paid_usd: Number(detail.summary?.paid_usd || 0),
+        payable_usd: Number(detail.summary?.payable_usd || 0),
+        remaining_usd: Number(detail.summary?.remaining_usd || 0)
+      }))
+      .sort((a, b) => b.total_revenue_usd - a.total_revenue_usd);
+
+    const channelMap = new Map();
+    for (const detail of monthDetails) {
+      for (const channel of detail.channels || []) {
+        const id = channel.channel_id;
+        if (!id) continue;
+        const current = channelMap.get(id) || {
+          channel_id: id,
+          title: channel.title || id,
+          thumbnail: channel.thumbnail || "",
+          status: channel.status || "error",
+          group_names: new Set(),
+          revenue_usd: 0,
+          paid_usd: 0
+        };
+        current.group_names.add(detail.group_name);
+        current.revenue_usd += Number(channel.revenue_usd || 0);
+        current.paid_usd += Number(channel.share_amount || 0);
+        channelMap.set(id, current);
+      }
+    }
+
+    const topChannels = Array.from(channelMap.values())
+      .map((channel) => ({
+        ...channel,
+        group_names: Array.from(channel.group_names)
+      }))
+      .sort((a, b) => b.revenue_usd - a.revenue_usd)
+      .slice(0, 10);
+
+    const monthlySummaries = months.slice(0, 12).map((itemMonth) => {
+      const details = assignedGroups.map((group) => groupDetail(group.id, itemMonth)).filter(Boolean);
+      return {
+        month: itemMonth,
+        ...summarizeGroupDetails(details)
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        month,
+        groups: topGroups,
+        monthly: summarizeGroupDetails(monthDetails),
+        full: summarizeGroupDetails(allDetails),
+        counts: {
+          groups: assignedGroups.length,
+          channels: Number(uniqueChannels?.total || 0),
+          active_channels: Number(uniqueChannels?.active || 0),
+          error_channels: Number(uniqueChannels?.error || 0)
+        },
+        top_groups: topGroups.slice(0, 10),
+        top_channels: topChannels,
+        monthly_summaries: monthlySummaries
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Could not load partner dashboard", error: error.message });
+  }
+};
+
 exports.getNetworks = (req, res) => {
   try {
     const rows = db.prepare("SELECT * FROM networks ORDER BY updated_at DESC, id DESC").all();

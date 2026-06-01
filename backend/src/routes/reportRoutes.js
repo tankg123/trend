@@ -12,6 +12,7 @@ router.use(authMiddleware);
 
 router.post("/manager/import", allowRoles(...REPORT_ROLES), reportController.importManagerReport);
 router.get("/dashboard", allowRoles(...REPORT_ROLES), reportController.getDashboard);
+router.get("/partner-dashboard", allowRoles("Partner"), reportController.getPartnerDashboard);
 router.get("/manager", allowRoles(...REPORT_ROLES), reportController.getReportSummary);
 router.delete("/manager", allowRoles(...REPORT_ROLES), reportController.deleteReportMonth);
 router.get("/youtube/quota", allowRoles(...REPORT_ROLES), reportController.getYoutubeQuota);

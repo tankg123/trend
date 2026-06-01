@@ -45,6 +45,31 @@ function verificationEmailHtml({ brandName, fullName, code, expiresMinutes }) {
   `;
 }
 
+function passwordResetEmailHtml({ brandName, fullName, code, expiresMinutes }) {
+  return `
+    <div style="font-family:Arial,sans-serif;background:#f4f7fb;padding:32px;color:#0f172a">
+      <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:24px;overflow:hidden">
+        <div style="background:#0f766e;color:#ffffff;padding:24px 28px">
+          <h1 style="margin:0;font-size:24px;font-weight:800">${brandName}</h1>
+          <p style="margin:8px 0 0;color:#ccfbf1">Password reset request</p>
+        </div>
+        <div style="padding:28px">
+          <p style="font-size:16px;margin:0 0 14px">Hello ${fullName || "there"},</p>
+          <p style="font-size:15px;line-height:1.6;color:#475569;margin:0 0 22px">
+            Use this code to reset your password. The code expires in ${expiresMinutes} minutes.
+          </p>
+          <div style="text-align:center;margin:28px 0">
+            <span style="display:inline-block;letter-spacing:10px;font-size:34px;font-weight:900;background:#ecfeff;color:#0f766e;border:1px solid #99f6e4;border-radius:18px;padding:18px 22px">${code}</span>
+          </div>
+          <p style="font-size:13px;line-height:1.6;color:#64748b;margin:0">
+            If you did not request a password reset, please ignore this email.
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 async function sendVerificationEmail({ to, fullName, code }) {
   const brandName = process.env.SMTP_FROM_NAME || "ANS Network";
   const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
@@ -57,6 +82,21 @@ async function sendVerificationEmail({ to, fullName, code }) {
     subject: `Verify your ${brandName} account`,
     text: `Your verification code is ${code}. This code expires in ${expiresMinutes} minutes.`,
     html: verificationEmailHtml({ brandName, fullName, code, expiresMinutes })
+  });
+}
+
+async function sendPasswordResetEmail({ to, fullName, code }) {
+  const brandName = process.env.SMTP_FROM_NAME || "ANS Network";
+  const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
+  const expiresMinutes = Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES || 15);
+  const transporter = createTransporter();
+
+  await transporter.sendMail({
+    from: `"${brandName}" <${fromEmail}>`,
+    to,
+    subject: `Reset your ${brandName} password`,
+    text: `Your password reset code is ${code}. This code expires in ${expiresMinutes} minutes.`,
+    html: passwordResetEmailHtml({ brandName, fullName, code, expiresMinutes })
   });
 }
 
@@ -76,6 +116,7 @@ async function sendMail({ to, subject, text, html }) {
 
 module.exports = {
   sendVerificationEmail,
+  sendPasswordResetEmail,
   sendMail,
   smtpEnabled
 };

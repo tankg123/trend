@@ -376,6 +376,14 @@ function managedChannelRows(keyword = "", filters = {}) {
     params.push(filters.status);
   }
 
+  if (filters.group_membership === "in_group") {
+    where.push("EXISTS (SELECT 1 FROM group_channels gc WHERE gc.channel_id = mc.channel_id)");
+  }
+
+  if (filters.group_membership === "not_in_group") {
+    where.push("NOT EXISTS (SELECT 1 FROM group_channels gc WHERE gc.channel_id = mc.channel_id)");
+  }
+
   if (filters.created_from) {
     where.push("date(mc.created_at) >= date(?)");
     params.push(filters.created_from);
@@ -397,7 +405,13 @@ function managedChannelRows(keyword = "", filters = {}) {
            p.partner_name, p.display_name AS partner_display_name,
            c.name AS collaborator_name, c.display_name AS collaborator_display_name,
            rs.name AS revenue_sharing_name, rs.share_rate AS revenue_share_rate,
-           crs.name AS colab_revenue_sharing_name, crs.share_rate AS colab_revenue_share_rate
+           crs.name AS colab_revenue_sharing_name, crs.share_rate AS colab_revenue_share_rate,
+           (
+             SELECT GROUP_CONCAT(cg.group_name, '||')
+             FROM group_channels gc
+             JOIN channel_groups cg ON cg.id = gc.group_id
+             WHERE gc.channel_id = mc.channel_id
+           ) AS group_names
     FROM managed_channels mc
     LEFT JOIN networks n ON n.id = mc.network_id
     LEFT JOIN partners p ON p.id = mc.partner_id
@@ -732,6 +746,7 @@ exports.bulkUpdateManagedChannels = (req, res) => {
           colab_revenue_sharing_id = ?,
           note = ?,
           status = ?,
+          unlinked_at = ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `);
@@ -754,14 +769,22 @@ exports.bulkUpdateManagedChannels = (req, res) => {
           throw new Error(`${current.title || current.channel_id}: ${sharingError}`);
         }
 
+        const shouldUnlink = Boolean(updates.unlink);
+        const unlinkedAt = shouldUnlink ? timestampForNote() : current.unlinked_at;
+        const noteLine = shouldUnlink ? `Unlinked at ${unlinkedAt}` : "";
+        const nextNote = shouldUnlink
+          ? [current.note, noteLine].filter(Boolean).join("\n")
+          : (has("note") ? updates.note : current.note);
+
         changed += updateStmt.run(
           has("network_id") ? nullable(updates.network_id) : current.network_id,
           has("partner_id") ? nullable(updates.partner_id) : current.partner_id,
           has("collaborator_id") ? nullable(updates.collaborator_id) : current.collaborator_id,
           nextRevenueSharingId,
           nextColabSharingId,
-          has("note") ? updates.note : current.note,
-          has("status") ? updates.status || "active" : current.status,
+          nextNote,
+          shouldUnlink ? "unlinked" : (has("status") ? updates.status || "active" : current.status),
+          unlinkedAt,
           current.id
         ).changes;
       }

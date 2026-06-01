@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const db = require("../config/database");
 const { parseRoles } = require("../middlewares/authMiddleware");
-const { sendVerificationEmail } = require("../services/mailService");
+const { sendVerificationEmail, sendPasswordResetEmail } = require("../services/mailService");
 
 const ROLE_OPTIONS = ["admin", "Account", "Report Manager", "Channel Management", "Content ID", "Expense", "Partner", "Read Only", "user"];
 const ROLE_LOOKUP = new Map(ROLE_OPTIONS.map((role) => [role.toLowerCase(), role]));
@@ -74,6 +74,31 @@ function createVerificationCode(user) {
 function latestVerificationCode(userId) {
   return db.prepare(`
     SELECT * FROM email_verification_codes
+    WHERE user_id = ? AND used_at IS NULL
+    ORDER BY id DESC
+    LIMIT 1
+  `).get(userId);
+}
+
+function createPasswordResetCode(user) {
+  const code = generateVerificationCode();
+  const expiresMinutes = Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES || 15);
+  const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000).toISOString();
+
+  db.prepare("UPDATE password_reset_codes SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL")
+    .run(user.id);
+
+  db.prepare(`
+    INSERT INTO password_reset_codes (user_id, email, code_hash, expires_at)
+    VALUES (?, ?, ?, ?)
+  `).run(user.id, user.email, hashVerificationCode(code), expiresAt);
+
+  return { code, expiresAt, expiresMinutes };
+}
+
+function latestPasswordResetCode(userId) {
+  return db.prepare(`
+    SELECT * FROM password_reset_codes
     WHERE user_id = ? AND used_at IS NULL
     ORDER BY id DESC
     LIMIT 1
@@ -391,6 +416,111 @@ exports.resendVerification = async (req, res) => {
   }
 };
 
+exports.forgotPassword = async (req, res) => {
+  try {
+    const cleanEmail = String(req.body?.email || "").trim().toLowerCase();
+    if (!cleanEmail || !isEmail(cleanEmail)) {
+      return res.status(400).json({ success: false, message: "Please enter a valid email address" });
+    }
+
+    const genericResponse = {
+      success: true,
+      message: "If this email exists, a password reset code has been sent."
+    };
+
+    const user = db.prepare("SELECT * FROM users WHERE email = ?").get(cleanEmail);
+    if (!user) {
+      return res.json(genericResponse);
+    }
+
+    const latest = latestPasswordResetCode(user.id);
+    if (latest && Date.now() - new Date(latest.created_at).getTime() < 60 * 1000) {
+      const retryAfter = Math.max(1, Math.ceil((60 * 1000 - (Date.now() - new Date(latest.created_at).getTime())) / 1000));
+      return res.status(429).json({
+        success: false,
+        retry_after: retryAfter,
+        message: `Please wait ${retryAfter} seconds before requesting another reset code`
+      });
+    }
+
+    const reset = createPasswordResetCode(user);
+    await sendPasswordResetEmail({
+      to: user.email,
+      fullName: user.full_name,
+      code: reset.code
+    });
+
+    res.json({
+      ...genericResponse,
+      email: user.email,
+      expires_at: reset.expiresAt
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Could not send password reset code", error: error.message });
+  }
+};
+
+exports.resetPassword = (req, res) => {
+  try {
+    const cleanEmail = String(req.body?.email || "").trim().toLowerCase();
+    const code = String(req.body?.code || "").replace(/\s+/g, "");
+    const password = String(req.body?.password || req.body?.new_password || "");
+    const confirmPassword = String(req.body?.confirm_password || password);
+
+    if (!cleanEmail || !code || !password) {
+      return res.status(400).json({ success: false, message: "Email, reset code, and new password are required" });
+    }
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({ success: false, message: "Password confirmation does not match" });
+    }
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 8 characters and include uppercase, lowercase, number, and special character"
+      });
+    }
+
+    const user = db.prepare("SELECT * FROM users WHERE email = ?").get(cleanEmail);
+    if (!user) {
+      return res.status(400).json({ success: false, message: "Invalid or expired reset code" });
+    }
+
+    const record = latestPasswordResetCode(user.id);
+    if (!record) {
+      return res.status(400).json({ success: false, message: "Reset code not found. Please request a new code." });
+    }
+
+    if (Number(record.attempts || 0) >= 5) {
+      return res.status(429).json({ success: false, message: "Too many attempts. Please request a new code." });
+    }
+
+    if (new Date(record.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({ success: false, message: "Reset code expired. Please request a new code." });
+    }
+
+    if (record.code_hash !== hashVerificationCode(code)) {
+      db.prepare("UPDATE password_reset_codes SET attempts = attempts + 1 WHERE id = ?").run(record.id);
+      return res.status(400).json({ success: false, message: "Invalid reset code" });
+    }
+
+    const transaction = db.transaction(() => {
+      db.prepare("UPDATE password_reset_codes SET used_at = CURRENT_TIMESTAMP WHERE id = ?").run(record.id);
+      db.prepare(`
+        UPDATE users
+        SET password = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(bcrypt.hashSync(password, 10), user.id);
+    });
+    transaction();
+
+    res.json({ success: true, message: "Password reset successfully. Please sign in with your new password." });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Could not reset password", error: error.message });
+  }
+};
+
 exports.login = (req, res) => {
   try {
     const { email, password, otp } = req.body;
@@ -671,6 +801,55 @@ exports.changePassword = (req, res) => {
     res.json({ success: true, message: "Password changed" });
   } catch (error) {
     res.status(500).json({ success: false, message: "Could not change password", error: error.message });
+  }
+};
+
+exports.resetUserPassword = (req, res) => {
+  try {
+    const { id } = req.params;
+    const password = String(req.body?.password || req.body?.new_password || "");
+    const confirmPassword = String(req.body?.confirm_password || password);
+
+    if (!password) {
+      return res.status(400).json({ success: false, message: "New password is required" });
+    }
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({ success: false, message: "Password confirmation does not match" });
+    }
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 8 characters and include uppercase, lowercase, number, and special character"
+      });
+    }
+
+    const target = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+    if (!target) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (!isAdminActor(req.user) && isAdminUser(target)) {
+      return res.status(403).json({ success: false, message: "Account role cannot reset admin passwords" });
+    }
+
+    if (!isAdminActor(req.user) && Number(req.user.id) === Number(id)) {
+      return res.status(400).json({ success: false, message: "Please use Change password for your own account" });
+    }
+
+    db.prepare(`
+      UPDATE users
+      SET password = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(bcrypt.hashSync(password, 10), id);
+
+    db.prepare("UPDATE password_reset_codes SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL")
+      .run(id);
+
+    res.json({ success: true, message: "Password reset successfully" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Could not reset user password", error: error.message });
   }
 };
 

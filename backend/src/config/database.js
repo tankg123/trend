@@ -117,6 +117,22 @@ db.exec(`
 db.exec("CREATE INDEX IF NOT EXISTS idx_email_verification_user ON email_verification_codes(user_id, used_at, expires_at)");
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS password_reset_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    email TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`);
+
+db.exec("CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_codes(user_id, used_at, expires_at)");
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     video_id TEXT NOT NULL UNIQUE,
