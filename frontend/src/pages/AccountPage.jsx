@@ -11,7 +11,10 @@ import {
   Lock,
   Unlock,
   Plus,
-  X
+  X,
+  KeyRound,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
@@ -46,6 +49,11 @@ export default function AccountPage() {
   const [message, setMessage] = useState("");
   const [pendingRole, setPendingRole] = useState({});
   const [pendingGroup, setPendingGroup] = useState({});
+  const [resetTarget, setResetTarget] = useState(null);
+  const [resetForm, setResetForm] = useState({ password: "", confirm_password: "" });
+  const [resetLoading, setResetLoading] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   async function fetchUsers() {
     if (!canViewAccount) return;
@@ -162,6 +170,36 @@ export default function AccountPage() {
         error.response?.data?.message ||
           "Lỗi xóa user"
       );
+    }
+  }
+
+  function openResetPassword(item) {
+    setResetTarget(item);
+    setResetForm({ password: "", confirm_password: "" });
+    setShowResetPassword(false);
+    setShowResetConfirm(false);
+    setMessage("");
+  }
+
+  async function resetUserPassword(event) {
+    event.preventDefault();
+    if (!resetTarget) return;
+
+    if (resetForm.password !== resetForm.confirm_password) {
+      setMessage("Password confirmation does not match");
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+      await api.put(`/auth/users/${resetTarget.id}/reset-password`, resetForm);
+      setMessage(`Password reset for ${resetTarget.full_name || resetTarget.email}`);
+      setResetTarget(null);
+      setResetForm({ password: "", confirm_password: "" });
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not reset user password");
+    } finally {
+      setResetLoading(false);
     }
   }
 
@@ -424,6 +462,15 @@ export default function AccountPage() {
                         )}
 
                         <button
+                          onClick={() => openResetPassword(item)}
+                          disabled={item.id === user.id || (!isAdmin && hasRole(item, "admin"))}
+                          className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center disabled:opacity-50"
+                          title="Reset password"
+                        >
+                          <KeyRound size={16} />
+                        </button>
+
+                        <button
                           onClick={() => deleteUser(item.id)}
                           disabled={item.id === user.id}
                           className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 flex items-center justify-center disabled:opacity-50"
@@ -459,6 +506,74 @@ export default function AccountPage() {
           <p className="text-slate-500 mt-2">
             Bạn chưa có quyền Account nên không thể xem danh sách user hoặc phân quyền tài khoản.
           </p>
+        </div>
+      )}
+
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+          <form onSubmit={resetUserPassword} className="w-full max-w-[520px] rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 p-6">
+              <div>
+                <h2 className="text-2xl font-black text-slate-900">Reset password</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  {resetTarget.full_name} - {resetTarget.email}
+                </p>
+              </div>
+              <button type="button" onClick={() => setResetTarget(null)} className="rounded-2xl border border-slate-200 p-3 text-slate-500 hover:bg-slate-50">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-6">
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700">
+                Password must be at least 8 characters and include uppercase, lowercase, number, and special character.
+              </div>
+
+              <label className="block">
+                <span className="text-sm font-bold text-slate-700">New password</span>
+                <div className="mt-2 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 focus-within:border-blue-500">
+                  <KeyRound size={20} className="text-slate-400" />
+                  <input
+                    type={showResetPassword ? "text" : "password"}
+                    value={resetForm.password}
+                    onChange={(event) => setResetForm((current) => ({ ...current, password: event.target.value }))}
+                    required
+                    className="w-full bg-transparent outline-none"
+                  />
+                  <button type="button" onClick={() => setShowResetPassword((value) => !value)} className="text-slate-400">
+                    {showResetPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-bold text-slate-700">Confirm password</span>
+                <div className="mt-2 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 focus-within:border-blue-500">
+                  <KeyRound size={20} className="text-slate-400" />
+                  <input
+                    type={showResetConfirm ? "text" : "password"}
+                    value={resetForm.confirm_password}
+                    onChange={(event) => setResetForm((current) => ({ ...current, confirm_password: event.target.value }))}
+                    required
+                    className="w-full bg-transparent outline-none"
+                  />
+                  <button type="button" onClick={() => setShowResetConfirm((value) => !value)} className="text-slate-400">
+                    {showResetConfirm ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 p-6">
+              <button type="button" onClick={() => setResetTarget(null)} className="rounded-2xl border border-slate-200 px-5 py-3 font-bold text-slate-700 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button disabled={resetLoading} className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-black text-white hover:bg-blue-700 disabled:opacity-60">
+                {resetLoading && <Loader2 size={18} className="animate-spin" />}
+                Save password
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

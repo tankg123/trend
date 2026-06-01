@@ -35,7 +35,7 @@ const logoColors = ["#2f8ccf", "#0f9f6e", "#7c3aed", "#ef4444", "#f59e0b", "#089
 
 export default function Sidebar() {
   const location = useLocation();
-  const { canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
+  const { canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups, canViewPartnerDashboard } = useAuth();
   const { t } = useI18n();
   const { theme } = useTheme();
   const { settings } = useSystemSettings();
@@ -43,7 +43,7 @@ export default function Sidebar() {
   const useUploadedLogo = settings.logo_mode === "upload" && settings.logo_data_url;
   const logoColor = useMemo(() => logoColors[Math.floor(Math.random() * logoColors.length)], []);
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
-  const reportPaths = ["/report-dashboard", "/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
+  const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
   const contentIdPaths = ["/content-id/creator", "/content-id/web-assets", "/content-id/products", "/content-id/labels", "/content-id/artists"];
   const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
   const partnerPaths = ["/partners", "/partners/overview", "/partners/list", "/partners/contracts"];
@@ -65,14 +65,15 @@ export default function Sidebar() {
   ];
 
   const reportMenus = [
-    { name: "Dashboard", path: "/report-dashboard", icon: BarChart3 },
-    { name: t("report"), path: "/reports", icon: FileSpreadsheet },
-    { name: "Channel", path: "/channels", icon: Video },
-    { name: t("network"), path: "/networks", icon: Network },
-    { name: t("exchangeRates"), path: "/exchange-rates", icon: CircleDollarSign },
-    { name: t("company"), path: "/companies", icon: BriefcaseBusiness },
-    { name: t("group"), path: "/groups", icon: UsersRound }
-  ];
+    { name: "Partner Dashboard", path: "/partner-dashboard", icon: BarChart3, show: canViewPartnerDashboard },
+    { name: "Dashboard", path: "/report-dashboard", icon: BarChart3, show: canViewReports },
+    { name: t("report"), path: "/reports", icon: FileSpreadsheet, show: canViewReports },
+    { name: "Channel", path: "/channels", icon: Video, show: canViewReports },
+    { name: t("network"), path: "/networks", icon: Network, show: canViewReports },
+    { name: t("exchangeRates"), path: "/exchange-rates", icon: CircleDollarSign, show: canViewReports },
+    { name: t("company"), path: "/companies", icon: BriefcaseBusiness, show: canViewReports },
+    { name: t("group"), path: "/groups", icon: UsersRound, show: canViewReports || canViewPartnerDashboard }
+  ].filter((item) => item.show);
 
   const partnerMenus = [
     { name: "Overview", path: "/partners/overview", icon: BarChart3 },
@@ -142,7 +143,7 @@ export default function Sidebar() {
           </Link>
         )}
 
-        {(canViewReports || canViewEmail || canViewChannelManagement || canViewContentId || canViewExpense || canViewPartner) && (
+        {(canViewReports || canViewPartnerDashboard || canViewEmail || canViewChannelManagement || canViewContentId || canViewExpense || canViewPartner) && (
           <>
           {canViewChannelManagement && (
           <div>
@@ -193,7 +194,7 @@ export default function Sidebar() {
           </div>
           )}
 
-          {canViewReports && (
+          {(canViewReports || canViewPartnerDashboard) && (
           <div>
             <button
               type="button"
@@ -475,7 +476,7 @@ export default function Sidebar() {
           );
         })}
 
-        {canViewPartnerGroups && !canViewReports && (
+        {canViewPartnerGroups && !canViewReports && !canViewPartnerDashboard && (
           <Link
             to="/groups"
             className={[

@@ -163,6 +163,14 @@ export default function LoginPage() {
               </div>
             )}
 
+            {!requires2fa && (
+              <div className="flex justify-end">
+                <Link to="/forgot-password" className="text-sm font-bold text-blue-600 hover:text-blue-700">
+                  Forgot password?
+                </Link>
+              </div>
+            )}
+
             <button
               disabled={loading}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-2xl py-4 font-black flex items-center justify-center gap-2 disabled:opacity-60"

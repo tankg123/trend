@@ -19,8 +19,10 @@ import AccountPage from "./pages/AccountPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import VerifyEmailPage from "./pages/VerifyEmailPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ManagerReportPage from "./pages/ManagerReportPage";
 import ReportDashboardPage from "./pages/ReportDashboardPage";
+import PartnerReportDashboardPage from "./pages/PartnerReportDashboardPage";
 import PartnerPage from "./pages/PartnerPage";
 import PartnerOverviewPage from "./pages/PartnerOverviewPage";
 import PartnerContractsPage from "./pages/PartnerContractsPage";
@@ -124,10 +126,10 @@ function LockedPage() {
 
 function MobileNav() {
   const location = useLocation();
-  const { canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
+  const { canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups, canViewPartnerDashboard } = useAuth();
   const { t } = useI18n();
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
-  const reportPaths = ["/report-dashboard", "/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
+  const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
   const contentIdPaths = ["/content-id/creator", "/content-id/web-assets", "/content-id/products", "/content-id/labels", "/content-id/artists"];
   const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
   const partnerPaths = ["/partners", "/partners/overview", "/partners/list", "/partners/contracts"];
@@ -148,41 +150,54 @@ function MobileNav() {
 
   const reportMenus = [
     {
+      name: "Partner Dashboard",
+      path: "/partner-dashboard",
+      icon: BarChart3,
+      show: canViewPartnerDashboard
+    },
+    {
       name: "Dashboard",
       path: "/report-dashboard",
-      icon: BarChart3
+      icon: BarChart3,
+      show: canViewReports
     },
     {
       name: t("report"),
       path: "/reports",
-      icon: FileSpreadsheet
+      icon: FileSpreadsheet,
+      show: canViewReports
     },
     {
       name: "Channel",
       path: "/channels",
-      icon: Video
+      icon: Video,
+      show: canViewReports
     },
     {
       name: t("network"),
       path: "/networks",
-      icon: Network
+      icon: Network,
+      show: canViewReports
     },
     {
       name: t("exchangeRates"),
       path: "/exchange-rates",
-      icon: CircleDollarSign
+      icon: CircleDollarSign,
+      show: canViewReports
     },
     {
       name: t("company"),
       path: "/companies",
-      icon: BriefcaseBusiness
+      icon: BriefcaseBusiness,
+      show: canViewReports
     },
     {
       name: t("group"),
       path: "/groups",
-      icon: UsersRound
+      icon: UsersRound,
+      show: canViewReports || canViewPartnerDashboard
     }
-  ].filter(() => canViewReports);
+  ].filter((item) => item.show);
 
   const menus = [
     {
@@ -218,7 +233,7 @@ function MobileNav() {
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        {(canViewChannelManagement || canViewReports || canViewEmail || canViewContentId || canViewExpense || canViewPartner) && (
+        {(canViewChannelManagement || canViewReports || canViewPartnerDashboard || canViewEmail || canViewContentId || canViewExpense || canViewPartner) && (
           <div className="col-span-2">
             {canViewChannelManagement && (
             <>
@@ -257,7 +272,7 @@ function MobileNav() {
             )}
             </>
             )}
-            {canViewReports && (
+            {(canViewReports || canViewPartnerDashboard) && (
             <>
             <button
               type="button"
@@ -458,7 +473,7 @@ function MobileNav() {
             </Link>
           );
         })}
-        {canViewPartnerGroups && !canViewReports && (
+        {canViewPartnerGroups && !canViewReports && !canViewPartnerDashboard && (
           <Link
             to="/groups"
             className={[
@@ -499,7 +514,7 @@ function MobileNav() {
 }
 
 function PrivateLayout() {
-  const { user, authLoading, canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
+  const { user, authLoading, canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups, canViewPartnerDashboard } = useAuth();
 
   if (authLoading) {
     return (
@@ -570,6 +585,16 @@ function PrivateLayout() {
             element={
               canViewReports ? (
                 <ReportDashboardPage />
+              ) : (
+                <Navigate to={defaultPath} replace />
+              )
+            }
+          />
+          <Route
+            path="/partner-dashboard"
+            element={
+              canViewPartnerDashboard ? (
+                <PartnerReportDashboardPage />
               ) : (
                 <Navigate to={defaultPath} replace />
               )
@@ -784,6 +809,15 @@ function AppRoutes() {
         element={
           <PublicRoute>
             <VerifyEmailPage />
+          </PublicRoute>
+        }
+      />
+
+      <Route
+        path="/forgot-password"
+        element={
+          <PublicRoute>
+            <ForgotPasswordPage />
           </PublicRoute>
         }
       />

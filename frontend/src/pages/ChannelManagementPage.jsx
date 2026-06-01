@@ -14,6 +14,19 @@ function initials(value = "C") {
   return String(value || "C").trim().charAt(0).toUpperCase() || "C";
 }
 
+function sortByLabel(items, getLabel) {
+  return [...(items || [])].sort((left, right) =>
+    String(getLabel(left) || "").localeCompare(String(getLabel(right) || ""), "vi", { sensitivity: "base" })
+  );
+}
+
+function channelGroupNames(channel) {
+  return String(channel?.group_names || "")
+    .split("||")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
 export default function ChannelManagementPage() {
   const [channels, setChannels] = useState([]);
   const [networks, setNetworks] = useState([]);
@@ -27,6 +40,7 @@ export default function ChannelManagementPage() {
     partner_id: "",
     sharing_id: "",
     status: "",
+    group_membership: "",
     created_from: "",
     created_to: ""
   });
@@ -135,10 +149,10 @@ export default function ChannelManagementPage() {
       ]);
       setChannels(channelsRes.data.data || []);
       setSelectedIds((current) => current.filter((id) => (channelsRes.data.data || []).some((channel) => channel.id === id)));
-      setNetworks(networksRes.data.data || []);
-      setPartners(partnersRes.data.data || []);
+      setNetworks(sortByLabel(networksRes.data.data || [], (network) => network.name));
+      setPartners(sortByLabel(partnersRes.data.data || [], (partner) => partner.display_name || partner.partner_name));
       setCollaborators(collaboratorsRes.data.data || []);
-      setSharings(sharingsRes.data.data || []);
+      setSharings(sortByLabel(sharingsRes.data.data || [], (sharing) => sharing.name || `${sharing.share_rate}%`));
     } catch (error) {
       setMessage(error.response?.data?.message || "Could not load channel management data");
     } finally {
@@ -389,6 +403,22 @@ export default function ChannelManagementPage() {
     }
   }
 
+  async function unlinkSelectedChannels() {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`Unlink ${selectedIds.length} selected channels?`)) return;
+    try {
+      setSaving(true);
+      const res = await api.put("/channels/management/bulk", { ids: selectedIds, updates: { unlink: true } });
+      setSelectedIds([]);
+      showToast(res.data.message || "Selected channels unlinked");
+      await fetchData();
+    } catch (error) {
+      setMessage(error.response?.data?.message || error.response?.data?.error || "Could not unlink selected channels");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   useEffect(() => {
     fetchData("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -555,11 +585,12 @@ export default function ChannelManagementPage() {
 
           {filtersOpen && (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="grid md:grid-cols-2 xl:grid-cols-6 gap-3">
+              <div className="grid md:grid-cols-2 xl:grid-cols-7 gap-3">
                 <SelectBox label="Network" value={filters.network_id} onChange={(v) => setFilters({ ...filters, network_id: v })} options={networks.map((n) => ({ value: n.id, label: n.name }))} fallback="All networks" />
                 <SelectBox label="Partner" value={filters.partner_id} onChange={(v) => setFilters({ ...filters, partner_id: v })} options={partners.map((p) => ({ value: p.id, label: p.display_name || p.partner_name }))} fallback="All partners" />
                 <SelectBox label="Rate Share" value={filters.sharing_id} onChange={(v) => setFilters({ ...filters, sharing_id: v })} options={sharings.map((s) => ({ value: s.id, label: `${s.name} (${s.share_rate}%)` }))} fallback="All rates" />
                 <SelectBox label="Status" value={filters.status} onChange={(v) => setFilters({ ...filters, status: v })} options={[{ value: "active", label: "Active" }, { value: "error", label: "Error" }, { value: "unlinked", label: "Unlinked" }]} fallback="All statuses" />
+                <SelectBox label="Group" value={filters.group_membership} onChange={(v) => setFilters({ ...filters, group_membership: v })} options={[{ value: "in_group", label: "In group" }, { value: "not_in_group", label: "Not in group" }]} fallback="All groups" />
                 <label>
                   <span className="font-black text-slate-700 mb-2 block">Added From</span>
                   <input type="date" value={filters.created_from} onChange={(event) => setFilters({ ...filters, created_from: event.target.value })} className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 outline-none focus:border-blue-500" />
@@ -572,7 +603,7 @@ export default function ChannelManagementPage() {
               <div className="mt-3 flex justify-end">
                 <button
                   type="button"
-                  onClick={() => setFilters({ network_id: "", partner_id: "", sharing_id: "", status: "", created_from: "", created_to: "" })}
+                  onClick={() => setFilters({ network_id: "", partner_id: "", sharing_id: "", status: "", group_membership: "", created_from: "", created_to: "" })}
                   className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-bold"
                 >
                   Clear filters
@@ -594,6 +625,13 @@ export default function ChannelManagementPage() {
                 className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm flex items-center gap-2"
               >
                 <Edit3 size={16} /> Edit selected
+              </button>
+              <button
+                type="button"
+                onClick={unlinkSelectedChannels}
+                className="px-4 py-2 rounded-xl bg-amber-50 text-amber-700 border border-amber-100 font-bold text-sm flex items-center gap-2"
+              >
+                <Unlink size={16} /> Unlink selected
               </button>
               <button
                 type="button"
@@ -631,6 +669,7 @@ export default function ChannelManagementPage() {
               <tbody className="divide-y divide-slate-100">
                 {paginatedChannels.map((channel) => {
                   const isUnlinked = channel.status === "unlinked";
+                  const groups = channelGroupNames(channel);
                   return (
                   <tr key={channel.id} className={isUnlinked ? "bg-red-50/70 hover:bg-red-50 outline outline-1 outline-red-200" : "hover:bg-slate-50/60"}>
                     <td className="px-5 py-4">
@@ -658,6 +697,19 @@ export default function ChannelManagementPage() {
                             {isUnlinked && (
                               <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-black uppercase text-red-600">
                                 Unlinked
+                              </span>
+                            )}
+                            {groups.length ? (
+                              <span
+                                className="inline-flex max-w-[180px] items-center rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700"
+                                title={groups.join(", ")}
+                              >
+                                <span className="truncate">{groups.slice(0, 2).join(", ")}</span>
+                                {groups.length > 2 ? <span className="ml-1">+{groups.length - 2}</span> : null}
+                              </span>
+                            ) : (
+                              <span className="inline-flex rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">
+                                No group
                               </span>
                             )}
                           </div>

@@ -135,6 +135,7 @@ export function AuthProvider({ children }) {
       const isAccountRole = hasRole(roles, "Account");
       const isReadOnly = hasRole(roles, "Read Only");
       const canViewContentIdSettings = isAdmin || isContentIdRole;
+      const canViewPartnerDashboard = isPartnerRole && !isAdmin && !isReportManager;
 
       return (
     <AuthContext.Provider
@@ -160,6 +161,7 @@ export function AuthProvider({ children }) {
         isManager: isReportManager,
         canViewReports: isAdmin || isReportManager,
         canViewEmail: isAdmin || isReportManager,
+        canViewPartnerDashboard,
         canViewPartnerGroups: isAdmin || isReportManager || isPartnerRole,
         canViewChannelManagement: isAdmin || isChannelManagement,
         canViewContentId: isAdmin || isContentIdRole,
