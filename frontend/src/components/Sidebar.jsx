@@ -14,6 +14,7 @@ import {
   Home,
   Landmark,
   Mail,
+  MoreHorizontal,
   Network,
   PackageSearch,
   Percent,
@@ -43,7 +44,7 @@ export default function Sidebar() {
   const useUploadedLogo = settings.logo_mode === "upload" && settings.logo_data_url;
   const logoColor = useMemo(() => logoColors[Math.floor(Math.random() * logoColors.length)], []);
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
-  const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
+  const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/export-multi", "/channels", "/networks", "/exchange-rates", "/companies", "/groups"];
   const contentIdPaths = ["/content-id/creator", "/content-id/web-assets", "/content-id/products", "/content-id/labels", "/content-id/artists"];
   const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
   const partnerPaths = ["/partners", "/partners/overview", "/partners/list", "/partners/contracts"];
@@ -57,6 +58,14 @@ export default function Sidebar() {
   const [partnerOpen, setPartnerOpen] = useState(partnerPaths.includes(location.pathname));
   const [emailOpen, setEmailOpen] = useState(emailPaths.includes(location.pathname));
   const [settingsOpen, setSettingsOpen] = useState(settingsPaths.includes(location.pathname));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("sidebarCollapsed") === "1");
+
+  function toggleSidebarCollapsed() {
+    setSidebarCollapsed((current) => {
+      localStorage.setItem("sidebarCollapsed", current ? "0" : "1");
+      return !current;
+    });
+  }
 
   const channelMenus = [
     { name: "Channel Management", path: "/channel-management", icon: Video },
@@ -68,6 +77,7 @@ export default function Sidebar() {
     { name: "Partner Dashboard", path: "/partner-dashboard", icon: BarChart3, show: canViewPartnerDashboard },
     { name: "Dashboard", path: "/report-dashboard", icon: BarChart3, show: canViewReports },
     { name: t("report"), path: "/reports", icon: FileSpreadsheet, show: canViewReports },
+    { name: "Export Multi", path: "/export-multi", icon: FileSpreadsheet, show: canViewReports },
     { name: "Channel", path: "/channels", icon: Video, show: canViewReports },
     { name: t("network"), path: "/networks", icon: Network, show: canViewReports },
     { name: t("exchangeRates"), path: "/exchange-rates", icon: CircleDollarSign, show: canViewReports },
@@ -97,14 +107,28 @@ export default function Sidebar() {
   return (
     <aside
       className={[
-        "w-[260px] h-screen sticky top-0 hidden lg:flex flex-col overflow-hidden border-r",
+        "h-screen sticky top-0 hidden lg:flex flex-col overflow-hidden border-r transition-all duration-200",
+        sidebarCollapsed ? "w-[86px] sidebar-collapsed" : "w-[260px]",
         isDark ? "bg-[#0f172a] text-white border-slate-800" : "bg-white text-slate-950 border-slate-200"
       ].join(" ")}
     >
-      <div className="px-5 pt-5 pb-4 text-center shrink-0">
+      <button
+        type="button"
+        onClick={toggleSidebarCollapsed}
+        className={[
+          "absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-xl border text-slate-500 transition hover:text-blue-600",
+          isDark ? "border-slate-700 bg-slate-900 hover:bg-slate-800" : "border-slate-200 bg-white hover:bg-slate-50"
+        ].join(" ")}
+        title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+      >
+        <MoreHorizontal size={18} />
+      </button>
+
+      <div className={["px-5 pt-5 pb-4 text-center shrink-0", sidebarCollapsed ? "px-3 pt-12" : ""].join(" ")}>
         <div
           className={[
-            "mx-auto w-28 h-28 rounded-full flex items-center justify-center shadow-lg shadow-slate-950/25 overflow-hidden ring-4",
+            "mx-auto rounded-full flex items-center justify-center shadow-lg shadow-slate-950/25 overflow-hidden ring-4 transition-all",
+            sidebarCollapsed ? "w-12 h-12" : "w-28 h-28",
             isDark ? "ring-white/10" : "ring-slate-100"
           ].join(" ")}
           style={{ backgroundColor: useUploadedLogo ? "transparent" : logoColor }}
@@ -116,8 +140,12 @@ export default function Sidebar() {
           />
         </div>
 
-        <h1 className="mt-5 text-xl font-black leading-tight">{settings.brand_name || t("appTitle")}</h1>
-        <p className={["mt-1 text-sm font-bold", isDark ? "text-slate-400" : "text-slate-500"].join(" ")}>{settings.brand_subtitle || t("appSubtitle")}</p>
+        {!sidebarCollapsed && (
+          <>
+            <h1 className="mt-5 text-xl font-black leading-tight">{settings.brand_name || t("appTitle")}</h1>
+            <p className={["mt-1 text-sm font-bold", isDark ? "text-slate-400" : "text-slate-500"].join(" ")}>{settings.brand_subtitle || t("appSubtitle")}</p>
+          </>
+        )}
       </div>
 
       <nav
@@ -164,7 +192,7 @@ export default function Sidebar() {
               <ChevronDown size={17} className={channelOpen ? "rotate-180 transition" : "transition"} />
             </button>
 
-            {channelOpen && (
+            {channelOpen && !sidebarCollapsed && (
               <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
                 {channelMenus.map((item) => {
                   const Icon = item.icon;
@@ -213,7 +241,7 @@ export default function Sidebar() {
               <ChevronDown size={17} className={reportOpen ? "rotate-180 transition" : "transition"} />
             </button>
 
-            {reportOpen && (
+            {reportOpen && !sidebarCollapsed && (
               <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
                 {reportMenus.map((item) => {
                   const Icon = item.icon;
@@ -262,7 +290,7 @@ export default function Sidebar() {
               <ChevronDown size={17} className={contentIdOpen ? "rotate-180 transition" : "transition"} />
             </button>
 
-            {contentIdOpen && (
+            {contentIdOpen && !sidebarCollapsed && (
               <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
                 {[
                   { name: "Creator Soundrecording & Art", path: "/content-id/creator", icon: FileAudio },
@@ -317,7 +345,7 @@ export default function Sidebar() {
               <ChevronDown size={17} className={expenseOpen ? "rotate-180 transition" : "transition"} />
             </button>
 
-            {expenseOpen && (
+            {expenseOpen && !sidebarCollapsed && (
               <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
                 {[
                   { name: t("overview"), path: "/expenses/overview", icon: BarChart3 },
@@ -372,7 +400,7 @@ export default function Sidebar() {
               <ChevronDown size={17} className={partnerOpen ? "rotate-180 transition" : "transition"} />
             </button>
 
-            {partnerOpen && (
+            {partnerOpen && !sidebarCollapsed && (
               <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
                 {partnerMenus.map((item) => {
                   const Icon = item.icon;
@@ -421,7 +449,7 @@ export default function Sidebar() {
               <ChevronDown size={17} className={emailOpen ? "rotate-180 transition" : "transition"} />
             </button>
 
-            {emailOpen && (
+            {emailOpen && !sidebarCollapsed && (
               <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
                 {emailMenus.map((item) => {
                   const Icon = item.icon;
@@ -514,7 +542,7 @@ export default function Sidebar() {
             <ChevronDown size={17} className={settingsOpen ? "rotate-180 transition" : "transition"} />
           </button>
 
-          {settingsOpen && (
+          {settingsOpen && !sidebarCollapsed && (
             <div className={["mt-2 ml-6 space-y-1 border-l pl-3", isDark ? "border-slate-700" : "border-slate-200"].join(" ")}>
               {settingsMenus.map((item) => {
                 const Icon = item.icon;

@@ -126,6 +126,26 @@ input {
   background: #475569;
 }
 
+.sidebar-collapsed nav span,
+.sidebar-collapsed nav .border-l,
+.sidebar-collapsed .shrink-0 span,
+.sidebar-collapsed .shrink-0 .border-l {
+  display: none !important;
+}
+
+.sidebar-collapsed nav a,
+.sidebar-collapsed nav button,
+.sidebar-collapsed > .shrink-0 button {
+  justify-content: center;
+  padding-left: 0.75rem !important;
+  padding-right: 0.75rem !important;
+}
+
+.sidebar-collapsed nav button svg:last-child,
+.sidebar-collapsed > .shrink-0 button svg:last-child {
+  display: none !important;
+}
+
 .read-only-action-disabled {
   opacity: 0.38 !important;
   filter: grayscale(0.35);

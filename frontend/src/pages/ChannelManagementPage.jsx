@@ -341,6 +341,10 @@ export default function ChannelManagementPage() {
     setSelectedIds(allVisibleSelected ? selectedIds.filter((id) => !visibleIds.includes(id)) : Array.from(new Set([...selectedIds, ...visibleIds])));
   }
 
+  function toggleAllChannels() {
+    setSelectedIds((current) => current.length === channels.length ? [] : channels.map((channel) => channel.id));
+  }
+
   function openBulkEdit() {
     setBulkEditForm({
       network_id: "__keep",
@@ -554,6 +558,15 @@ export default function ChannelManagementPage() {
                 {exporting ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
                 Export{selectedIds.length ? ` (${selectedIds.length})` : ""}
               </button>
+              <button
+                type="button"
+                onClick={toggleAllChannels}
+                disabled={!channels.length}
+                className="px-4 py-2 rounded-xl border border-blue-100 bg-blue-50 text-blue-700 font-bold text-sm flex items-center gap-2 disabled:opacity-50"
+              >
+                <Check size={16} />
+                {selectedIds.length === channels.length && channels.length ? "Clear all" : "Select all"}
+              </button>
               <button onClick={() => setBulkOpen(true)} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm flex items-center gap-2"><Plus size={16} /> Add Channel</button>
               <button
                 type="button"
@@ -619,6 +632,15 @@ export default function ChannelManagementPage() {
           <div className="mx-5 mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <p className="font-black text-blue-700">{selectedIds.length} channels selected</p>
             <div className="flex flex-wrap gap-2">
+              {selectedIds.length < channels.length && (
+                <button
+                  type="button"
+                  onClick={toggleAllChannels}
+                  className="px-4 py-2 rounded-xl border border-blue-200 bg-white text-blue-700 font-bold text-sm flex items-center gap-2"
+                >
+                  <Check size={16} /> Select all {channels.length}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={openBulkEdit}

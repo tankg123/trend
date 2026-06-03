@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ArrowUpDown, Calendar, Check, Copy, Download, Edit3, Loader2, Plus, RefreshCw, Trash2, Users, X } from "lucide-react";
+import { ArrowUpDown, Calendar, Check, Copy, Download, Edit3, Loader2, MoreHorizontal, Plus, RefreshCw, Trash2, Users, X } from "lucide-react";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 
@@ -568,6 +568,10 @@ function exportGroupPdf(group, company = fallbackCompany) {
 }
 
 function GroupForm({ partners, value, onChange }) {
+  const sortedPartners = useMemo(() => [...(partners || [])].sort((left, right) =>
+    String(left.display_name || left.partner_name || "").localeCompare(String(right.display_name || right.partner_name || ""), "vi", { sensitivity: "base" })
+  ), [partners]);
+
   return (
     <div className="space-y-5">
       <div className="grid md:grid-cols-2 gap-4">
@@ -575,7 +579,7 @@ function GroupForm({ partners, value, onChange }) {
           <span className="text-xs font-black uppercase text-slate-400 mb-2 block">Partner</span>
           <select value={value.partner_id} onChange={(e) => onChange({ ...value, partner_id: e.target.value })} className="w-full rounded-2xl border border-slate-300 px-4 py-3 bg-white">
             <option value="">Chọn partner</option>
-            {partners.map((partner) => (
+            {sortedPartners.map((partner) => (
               <option key={partner.id} value={partner.id}>{partner.display_name || partner.partner_name}</option>
             ))}
           </select>
@@ -679,6 +683,7 @@ export default function GroupChannelPage() {
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState("");
   const [includeSignatureBoxes, setIncludeSignatureBoxes] = useState(false);
+  const [groupListCollapsed, setGroupListCollapsed] = useState(false);
   const [channelSort, setChannelSort] = useState({ key: "channel", direction: "asc" });
   const queryGroupId = searchParams.get("group_id");
   const queryMonth = searchParams.get("month");
@@ -1010,11 +1015,20 @@ export default function GroupChannelPage() {
 
       {message && <div className="mb-5 bg-blue-50 border border-blue-100 text-blue-700 rounded-2xl px-5 py-4 font-medium">{message}</div>}
 
-      <div className="grid xl:grid-cols-[360px_1fr] gap-5">
+      <div className={groupListCollapsed ? "grid gap-5" : "grid xl:grid-cols-[360px_1fr] gap-5"}>
+        {!groupListCollapsed && (
         <aside className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
             <Users size={18} />
             <h2 className="font-black">Groups</h2>
+            <button
+              type="button"
+              onClick={() => setGroupListCollapsed(true)}
+              className="ml-auto flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-blue-600"
+              title="Hide group list"
+            >
+              <MoreHorizontal size={17} />
+            </button>
           </div>
           {loading ? (
             <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-blue-600" /></div>
@@ -1045,8 +1059,19 @@ export default function GroupChannelPage() {
             </div>
           )}
         </aside>
+        )}
 
         <main className="space-y-5">
+          {groupListCollapsed && (
+            <button
+              type="button"
+              onClick={() => setGroupListCollapsed(false)}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              <MoreHorizontal size={17} />
+              Show groups
+            </button>
+          )}
           {!detail ? (
             <div className="bg-white border border-dashed border-slate-300 rounded-3xl p-12 text-center text-slate-500">Chọn hoặc tạo group để xem chi tiết.</div>
           ) : (

@@ -87,6 +87,7 @@ export default function Topbar() {
         ...(canViewReports ? [
           { name: "Dashboard", path: "/report-dashboard", icon: BarChart3 },
           { name: t("report"), path: "/reports", icon: FileSpreadsheet },
+          { name: "Export Multi", path: "/export-multi", icon: FileSpreadsheet },
           { name: "Channel", path: "/channels", icon: Video },
           { name: t("network"), path: "/networks", icon: Network },
           { name: t("exchangeRates"), path: "/exchange-rates", icon: CircleDollarSign },
