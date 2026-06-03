@@ -146,6 +146,54 @@ function parseChannelInputs(value) {
     .filter(Boolean);
 }
 
+function chunkItems(items = [], size = 500) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
+}
+
+function existingReportChannelIds(channelIds = []) {
+  const found = new Set();
+  for (const batch of chunkItems(channelIds)) {
+    if (!batch.length) continue;
+    const rows = db.prepare(`
+      SELECT channel_id
+      FROM channels
+      WHERE channel_id IN (${batch.map(() => "?").join(",")})
+    `).all(...batch);
+    rows.forEach((row) => found.add(row.channel_id));
+  }
+  return found;
+}
+
+function managedChannelRowsByIds(channelIds = []) {
+  const rows = [];
+  for (const batch of chunkItems(channelIds)) {
+    if (!batch.length) continue;
+    rows.push(...db.prepare(`
+      SELECT mc.*, rs.share_rate AS revenue_share_rate
+      FROM managed_channels mc
+      LEFT JOIN revenue_sharings rs ON rs.id = mc.revenue_sharing_id
+      WHERE mc.channel_id IN (${batch.map(() => "?").join(",")})
+    `).all(...batch));
+  }
+  return rows;
+}
+
+function existingGroupChannelRows(groupId, channelIds = []) {
+  const rows = [];
+  for (const batch of chunkItems(channelIds)) {
+    if (!batch.length) continue;
+    rows.push(...db.prepare(`
+      SELECT gc.channel_id, c.title
+      FROM group_channels gc
+      LEFT JOIN channels c ON c.channel_id = gc.channel_id
+      WHERE gc.group_id = ? AND gc.channel_id IN (${batch.map(() => "?").join(",")})
+    `).all(groupId, ...batch));
+  }
+  return rows;
+}
+
 function parseMoney(value) {
   const clean = String(value || "").replace(/[^0-9.-]/g, "");
   return Number(clean || 0);
@@ -2492,12 +2540,47 @@ exports.addGroupChannels = async (req, res) => {
       resolvedIds.push(channel.channel_id);
     }
 
-    const youtubeChannels = await getChannelsFromYoutube(directIds);
+    const uniqueChannels = [...new Set(resolvedIds)];
+    const existingInGroup = existingGroupChannelRows(req.params.id, uniqueChannels);
+    const duplicateChannelIds = new Set(existingInGroup.map((channel) => channel.channel_id));
+    const channelsToInsert = uniqueChannels.filter((channelId) => !duplicateChannelIds.has(channelId));
+
+    if (channelsToInsert.length === 0 && existingInGroup.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Channel already exists in this group: ${existingInGroup.map((channel) => `${channel.title || "Channel"} (${channel.channel_id})`).join(", ")}`,
+        data: {
+          duplicate_channels: existingInGroup
+        }
+      });
+    }
+
+    const existingReportIds = existingReportChannelIds(directIds);
+    const directIdsMissingFromReport = directIds.filter((channelId) => !existingReportIds.has(channelId));
+    const managedRows = managedChannelRowsByIds(directIdsMissingFromReport);
+    for (const channel of managedRows) {
+      upsertChannel({
+        channel_id: channel.channel_id,
+        title: channel.title || channel.channel_id,
+        description: channel.description || "",
+        custom_url: channel.custom_url || "",
+        thumbnail: channel.thumbnail || "",
+        view_count: Number(channel.view_count || 0),
+        subscriber_count: Number(channel.subscriber_count || 0),
+        video_count: Number(channel.video_count || 0),
+        country: channel.country || "",
+        published_at: channel.published_at || "",
+        latest_videos: undefined
+      });
+    }
+
+    const managedIds = new Set(managedRows.map((channel) => channel.channel_id));
+    const idsNeedingYoutube = directIdsMissingFromReport.filter((channelId) => !managedIds.has(channelId));
+    const youtubeChannels = await getChannelsFromYoutube(idsNeedingYoutube);
     for (const channel of youtubeChannels) upsertChannel(channel);
 
-    const uniqueChannels = [...new Set(resolvedIds)];
     const foundDirectIds = new Set(youtubeChannels.map((channel) => channel.channel_id));
-    const missingDirectIds = directIds.filter((channelId) => !foundDirectIds.has(channelId));
+    const missingDirectIds = idsNeedingYoutube.filter((channelId) => !foundDirectIds.has(channelId));
     for (const channelId of missingDirectIds) {
       upsertPlaceholderChannel(channelId, "Không lấy được dữ liệu từ YouTube khi thêm vào group");
     }
@@ -2507,9 +2590,31 @@ exports.addGroupChannels = async (req, res) => {
       return res.status(400).json({ success: false, message: "Revenue share phải nằm trong khoảng 0% đến 100%" });
     }
 
-    const appliedShare = customShare == null ? groupDefaultShare(req.params.id, month || "") : customShare;
-    const invalidChannels = uniqueChannels
+    const managedShareRows = managedChannelRowsByIds(channelsToInsert);
+    const managedShareByChannel = new Map(
+      managedShareRows
+        .map((channel) => ({
+          channel_id: channel.channel_id,
+          revenue_share_rate: Number(channel.revenue_share_rate)
+        }))
+        .filter((channel) => Number.isFinite(channel.revenue_share_rate) && channel.revenue_share_rate >= 0 && channel.revenue_share_rate <= 100)
+        .map((channel) => [channel.channel_id, channel.revenue_share_rate])
+    );
+    const defaultGroupShare = groupDefaultShare(req.params.id, month || "");
+    const shareForChannel = (channelId) => {
+      if (customShare != null) return customShare;
+      if (managedShareByChannel.has(channelId)) return managedShareByChannel.get(channelId);
+      return defaultGroupShare;
+    };
+    const customShareForInsert = (channelId) => {
+      if (customShare != null) return customShare;
+      if (managedShareByChannel.has(channelId)) return managedShareByChannel.get(channelId);
+      return null;
+    };
+
+    const invalidChannels = channelsToInsert
       .map((channelId) => {
+        const appliedShare = shareForChannel(channelId);
         const existingShare = existingShareForChannel(channelId, month || "", req.params.id);
         return {
           channel_id: channelId,
@@ -2533,12 +2638,23 @@ exports.addGroupChannels = async (req, res) => {
     const stmt = db.prepare(`
       INSERT INTO group_channels (group_id, channel_id, custom_share)
       VALUES (?, ?, ?)
-      ON CONFLICT(group_id, channel_id) DO UPDATE SET custom_share = excluded.custom_share
     `);
 
-    for (const channelId of uniqueChannels) stmt.run(req.params.id, channelId, customShare);
+    const insertChannels = db.transaction((channelIds) => {
+      for (const channelId of channelIds) stmt.run(req.params.id, channelId, customShareForInsert(channelId));
+    });
+    insertChannels(channelsToInsert);
 
-    res.json({ success: true, message: "Đã thêm channel vào group", data: { added: uniqueChannels.length } });
+    res.json({
+      success: true,
+      message: `Đã thêm ${channelsToInsert.length} channel vào group${existingInGroup.length ? `, bỏ qua ${existingInGroup.length} channel đã có sẵn` : ""}`,
+      data: {
+        added: channelsToInsert.length,
+        skipped: existingInGroup.length,
+        used_channel_management_share: customShare == null ? managedShareByChannel.size : 0,
+        duplicate_channels: existingInGroup
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: "Lỗi thêm channel vào group", error: error.message });
   }
