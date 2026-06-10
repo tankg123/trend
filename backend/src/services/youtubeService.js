@@ -186,6 +186,21 @@ function getQuotaStatus() {
   };
 }
 
+function formatIsoDuration(duration = "") {
+  const match = String(duration || "").match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!match) return "";
+
+  const hours = Number(match[1] || 0);
+  const minutes = Number(match[2] || 0);
+  const seconds = Number(match[3] || 0);
+
+  if (hours) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 function extractChannelInput(input) {
   if (!input) return "";
 
@@ -477,9 +492,52 @@ async function getAllVideosFromYoutube(channelId) {
   return videos;
 }
 
+async function getVideosMetadataFromYoutube(videoIds = []) {
+  const ids = [...new Set((videoIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  const videosById = {};
+
+  for (let index = 0; index < ids.length; index += 50) {
+    const batch = ids.slice(index, index + 50);
+    const response = await youtubeGet(YOUTUBE_VIDEOS_API, {
+      params: {
+        part: "snippet,contentDetails",
+        id: batch.join(",")
+      },
+      timeout: 15000
+    }, "videos.list");
+
+    for (const item of response.data?.items || []) {
+      const snippet = item.snippet || {};
+      const contentDetails = item.contentDetails || {};
+      const thumbnails = snippet.thumbnails || {};
+      const thumbnail =
+        thumbnails.medium?.url ||
+        thumbnails.high?.url ||
+        thumbnails.standard?.url ||
+        thumbnails.default?.url ||
+        "";
+
+      videosById[item.id] = {
+        video_id: item.id,
+        title: snippet.title || "",
+        channel_id: snippet.channelId || "",
+        channel_title: snippet.channelTitle || "",
+        thumbnail,
+        duration: contentDetails.duration || "",
+        duration_text: formatIsoDuration(contentDetails.duration || ""),
+        published_at: snippet.publishedAt || "",
+        url: item.id ? `https://www.youtube.com/watch?v=${item.id}` : ""
+      };
+    }
+  }
+
+  return videosById;
+}
+
 module.exports = {
   getChannelFromYoutube,
   getChannelsFromYoutube,
   getAllVideosFromYoutube,
+  getVideosMetadataFromYoutube,
   getQuotaStatus
 };

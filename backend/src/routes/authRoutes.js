@@ -57,6 +57,13 @@ router.put(
   authController.updateUserGroups
 );
 
+router.put(
+  "/users/:id/content-id-labels",
+  authMiddleware,
+  allowRoles("admin", "Account"),
+  authController.updateUserContentIdLabels
+);
+
 router.delete(
   "/users/:id",
   authMiddleware,

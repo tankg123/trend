@@ -1,4 +1,15 @@
 const db = require("../config/database");
+const {
+  createClaim: createGoogleClaim,
+  enrichClaimsWithAssets,
+  getClaim: getGoogleClaim,
+  getGoogleError,
+  listClaimsByChannel,
+  listClaimsByVideo,
+  releaseClaim: releaseGoogleClaim
+} = require("../services/googleContentIdService");
+const { syncAssetLabelsFromCms } = require("../services/assetLabelSyncService");
+const { parseRoles } = require("../middlewares/authMiddleware");
 
 const CODE_TYPES = new Set(["ISRC", "UPC"]);
 
@@ -51,6 +62,21 @@ function moneySafeNumber(value) {
 
 function normalizeName(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function actorHasRole(user, role) {
+  const target = String(role || "").toLowerCase();
+  return parseRoles(user?.roles?.length ? user.roles : user?.role).some((item) => String(item).toLowerCase() === target);
+}
+
+function isLimitedClaimManager(user) {
+  return actorHasRole(user, "Claim Manager") && !actorHasRole(user, "admin") && !actorHasRole(user, "Content ID");
+}
+
+function canManageLabel(user, labelId) {
+  if (!isLimitedClaimManager(user)) return true;
+  const row = db.prepare("SELECT 1 FROM user_content_id_labels WHERE user_id = ? AND label_id = ?").get(user.id, labelId);
+  return Boolean(row);
 }
 
 function splitArtists(value) {
@@ -385,8 +411,20 @@ function getProductDetailById(id) {
 
 function listLabels(req, res) {
   const search = String(req.query.search || "").trim();
-  const params = search ? [`%${search}%`, `%${search}%`] : [];
-  const where = search ? "WHERE l.name LIKE ? OR l.display_name LIKE ?" : "";
+  const params = [];
+  const clauses = [];
+
+  if (search) {
+    clauses.push("(l.name LIKE ? OR l.display_name LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`);
+  }
+
+  if (isLimitedClaimManager(req.user)) {
+    clauses.push("l.id IN (SELECT label_id FROM user_content_id_labels WHERE user_id = ?)");
+    params.push(req.user.id);
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
   const labels = db.prepare(`
     SELECT
@@ -416,8 +454,18 @@ function createLabel(req, res) {
       INSERT INTO content_id_labels (name, display_name, notes)
       VALUES (?, ?, ?)
     `).run(name, displayName, notes || null);
+
+    if (isLimitedClaimManager(req.user)) {
+      db.prepare("INSERT OR IGNORE INTO user_content_id_labels (user_id, label_id) VALUES (?, ?)").run(req.user.id, result.lastInsertRowid);
+    }
+
     res.json({ success: true, label: db.prepare("SELECT * FROM content_id_labels WHERE id = ?").get(result.lastInsertRowid) });
   } catch {
+    const existing = db.prepare("SELECT * FROM content_id_labels WHERE lower(name) = lower(?)").get(name);
+    if (existing && isLimitedClaimManager(req.user)) {
+      db.prepare("INSERT OR IGNORE INTO user_content_id_labels (user_id, label_id) VALUES (?, ?)").run(req.user.id, existing.id);
+      return res.json({ success: true, label: existing, message: "Label assigned to your account" });
+    }
     res.status(400).json({ success: false, message: "Label already exists" });
   }
 }
@@ -432,6 +480,7 @@ function updateLabel(req, res) {
 
   const current = db.prepare("SELECT * FROM content_id_labels WHERE id = ?").get(id);
   if (!current) return res.status(404).json({ success: false, message: "Label not found" });
+  if (!canManageLabel(req.user, id)) return res.status(403).json({ success: false, message: "You can only update labels assigned to your account" });
 
   try {
     db.prepare(`
@@ -449,6 +498,7 @@ function deleteLabel(req, res) {
   const id = Number(req.params.id);
   const label = db.prepare("SELECT * FROM content_id_labels WHERE id = ?").get(id);
   if (!label) return res.status(404).json({ success: false, message: "Label not found" });
+  if (!canManageLabel(req.user, id)) return res.status(403).json({ success: false, message: "You can only delete labels assigned to your account" });
   const used = db.prepare(`
     SELECT COUNT(*) AS count
     FROM content_id_products
@@ -461,6 +511,18 @@ function deleteLabel(req, res) {
 
   db.prepare("DELETE FROM content_id_labels WHERE id = ?").run(id);
   res.json({ success: true });
+}
+
+async function syncLabelsFromCms(req, res) {
+  try {
+    const result = await syncAssetLabelsFromCms();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(error.response?.status || 400).json({
+      success: false,
+      message: error.response?.data?.error?.message || error.message
+    });
+  }
 }
 
 function listArtists(req, res) {
@@ -594,22 +656,480 @@ function deleteProduct(req, res) {
   res.json({ success: true });
 }
 
+function listCmsNetworks(req, res) {
+  const networks = db.prepare(`
+    SELECT
+      id,
+      name,
+      network_code,
+      description,
+      cms_auth_status,
+      cms_auth_email,
+      cms_auth_name,
+      cms_auth_scopes,
+      cms_token_expiry,
+      cms_authed_at,
+      updated_at
+    FROM networks
+    WHERE cms_auth_status = 'connected'
+    ORDER BY name COLLATE NOCASE ASC
+  `).all();
+
+  res.json({ success: true, networks });
+}
+
+function listClaims(req, res) {
+  const networkId = Number(req.query.network_id || 0);
+  const status = String(req.query.status || "").trim();
+  const search = String(req.query.search || "").trim();
+  const limit = Math.min(Math.max(Number(req.query.limit) || 300, 1), 1000);
+
+  const clauses = [];
+  const params = [];
+
+  if (networkId) {
+    clauses.push("network_id = ?");
+    params.push(networkId);
+  }
+
+  if (status) {
+    clauses.push("status = ?");
+    params.push(status);
+  }
+
+  if (search) {
+    clauses.push("(network_name LIKE ? OR content_owner_id LIKE ? OR claim_id LIKE ? OR video_id LIKE ? OR asset_id LIKE ? OR policy_id LIKE ? OR note LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const claims = db.prepare(`
+    SELECT *
+    FROM content_id_claims
+    ${where}
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+  `).all(...params, limit);
+
+  const summaryRows = db.prepare(`
+    SELECT status, COUNT(*) AS count
+    FROM content_id_claims
+    GROUP BY status
+  `).all();
+  const summary = summaryRows.reduce((acc, row) => {
+    acc[row.status] = row.count;
+    acc.total += row.count;
+    return acc;
+  }, { total: 0 });
+
+  res.json({ success: true, claims, summary });
+}
+
+function validateClaimBody(body) {
+  const networkId = Number(body.network_id);
+  const videoId = String(body.video_id || "").trim();
+  const assetId = String(body.asset_id || "").trim();
+  const policyId = String(body.policy_id || "").trim();
+  const contentType = String(body.content_type || "audiovisual").trim() || "audiovisual";
+
+  if (!networkId) return "CMS network is required";
+  if (!videoId) return "Video ID is required";
+  if (!assetId) return "Asset ID is required";
+  if (!policyId) return "Policy ID is required";
+  if (!["audiovisual", "audio", "visual"].includes(contentType)) return "Invalid content type";
+  return "";
+}
+
+function extractVideoId(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^[a-zA-Z0-9_-]{11}$/.test(raw)) return raw;
+
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.replace(/^www\./, "");
+    if (host === "youtu.be") {
+      const id = url.pathname.split("/").filter(Boolean)[0];
+      return /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : "";
+    }
+    if (host.endsWith("youtube.com")) {
+      const watchId = url.searchParams.get("v");
+      if (/^[a-zA-Z0-9_-]{11}$/.test(watchId || "")) return watchId;
+      const parts = url.pathname.split("/").filter(Boolean);
+      const markerIndex = parts.findIndex((part) => ["shorts", "embed", "live"].includes(part));
+      if (markerIndex >= 0 && /^[a-zA-Z0-9_-]{11}$/.test(parts[markerIndex + 1] || "")) {
+        return parts[markerIndex + 1];
+      }
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
+function extractChannelId(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^UC[a-zA-Z0-9_-]{20,}$/.test(raw)) return raw;
+
+  try {
+    const url = new URL(raw);
+    const parts = url.pathname.split("/").filter(Boolean);
+    const markerIndex = parts.findIndex((part) => ["channel", "c", "user"].includes(part));
+    if (markerIndex >= 0 && /^UC[a-zA-Z0-9_-]{20,}$/.test(parts[markerIndex + 1] || "")) {
+      return parts[markerIndex + 1];
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
+function parseClaimLookupInputs(inputs) {
+  const lines = Array.isArray(inputs)
+    ? inputs
+    : String(inputs || "").split(/[\r\n,;\t]+/);
+  const videos = new Set();
+  const channels = new Set();
+  const invalid = [];
+
+  lines.forEach((line) => {
+    const value = String(line || "").trim();
+    if (!value) return;
+    const videoId = extractVideoId(value);
+    if (videoId) {
+      videos.add(videoId);
+      return;
+    }
+    const channelId = extractChannelId(value);
+    if (channelId) {
+      channels.add(channelId);
+      return;
+    }
+    invalid.push(value);
+  });
+
+  return {
+    videos: Array.from(videos),
+    channels: Array.from(channels),
+    invalid
+  };
+}
+
+function claimUniqueKey(claim) {
+  return [claim.network_id, claim.claim_id || claim.id, claim.video_id, claim.asset_id].join("::");
+}
+
+async function searchClaims(req, res) {
+  const requestedNetworkIds = Array.isArray(req.body.network_ids)
+    ? req.body.network_ids.map(Number).filter(Boolean)
+    : String(req.body.network_ids || "")
+      .split(/[,\s]+/)
+      .map(Number)
+      .filter(Boolean);
+  const networkId = Number(req.body.network_id || requestedNetworkIds[0] || 0);
+  const { videos, channels, invalid } = parseClaimLookupInputs(req.body.inputs);
+
+  if (!networkId) {
+    return res.status(400).json({ success: false, message: "Please choose one CMS network" });
+  }
+  if (!videos.length && !channels.length) {
+    return res.status(400).json({ success: false, message: "Please enter video links, video IDs, or channel IDs" });
+  }
+
+  const claims = [];
+  const errors = [];
+  const seen = new Set();
+
+  for (const videoId of videos) {
+    try {
+      const result = await listClaimsByVideo(networkId, videoId, { limit: 100 });
+      result.claims.forEach((claim) => {
+        const key = claimUniqueKey(claim);
+        if (!seen.has(key)) {
+          seen.add(key);
+          claims.push({ ...claim, lookup_type: "video", lookup_value: videoId });
+        }
+      });
+    } catch (error) {
+      errors.push({ network_id: networkId, input: videoId, message: getGoogleError(error) });
+    }
+  }
+
+  for (const channelId of channels) {
+    try {
+      const result = await listClaimsByChannel(networkId, channelId, { limit: 1000 });
+      result.claims.forEach((claim) => {
+        const key = claimUniqueKey(claim);
+        if (!seen.has(key)) {
+          seen.add(key);
+          claims.push({ ...claim, lookup_type: "channel", lookup_value: channelId });
+        }
+      });
+    } catch (error) {
+      errors.push({ network_id: networkId, input: channelId, message: getGoogleError(error) });
+    }
+  }
+
+  const enriched = await enrichClaimsWithAssets(networkId, claims);
+  const claimRows = enriched.claims.filter((claim) => claim.managed_by_selected_cms);
+  enriched.assetErrors.forEach((error) => errors.push({ network_id: networkId, input: error.asset_id, message: error.message }));
+
+  const releasable = claimRows.filter((claim) => claim.releasable && claim.claim_id).length;
+  res.json({
+    success: true,
+    network_id: networkId,
+    videos,
+    channels,
+    invalid,
+    claims: claimRows,
+    errors,
+    summary: {
+      videos: videos.length,
+      channels: channels.length,
+      claims: claimRows.length,
+      releasable
+    }
+  });
+}
+
+async function releaseClaims(req, res) {
+  const claimItems = Array.isArray(req.body.claims) ? req.body.claims : [];
+  if (!claimItems.length) {
+    return res.status(400).json({ success: false, message: "Please select at least one claim" });
+  }
+
+  const released = [];
+  const errors = [];
+
+  for (const item of claimItems) {
+    const networkId = Number(item.network_id);
+    const claimId = String(item.claim_id || item.id || "").trim();
+    const managedBySelectedCms = Boolean(item.managed_by_selected_cms);
+    if (!networkId || !claimId) {
+      errors.push({ claim_id: claimId || "-", message: "Missing CMS network or claim ID" });
+      continue;
+    }
+    if (!managedBySelectedCms) {
+      errors.push({ network_id: networkId, claim_id: claimId, message: "This claim is not managed by the selected CMS" });
+      continue;
+    }
+
+    try {
+      const result = await releaseGoogleClaim(networkId, claimId);
+      const existing = db.prepare(`
+        SELECT id
+        FROM content_id_claims
+        WHERE network_id = ? AND claim_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+      `).get(networkId, claimId);
+
+      const responseText = JSON.stringify(result.data || {});
+      if (existing) {
+        db.prepare(`
+          UPDATE content_id_claims
+          SET status = 'released',
+              claim_response = ?,
+              error_message = NULL,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(responseText, existing.id);
+      } else {
+        db.prepare(`
+          INSERT INTO content_id_claims (
+            network_id, network_name, content_owner_id, claim_id, video_id,
+            asset_id, policy_id, content_type, status, claim_response, note,
+            created_by, created_by_name
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'released', ?, ?, ?, ?)
+        `).run(
+          networkId,
+          item.network_name || result.network.name,
+          item.content_owner_id || result.contentOwnerId,
+          claimId,
+          item.video_id || "-",
+          item.asset_id || "-",
+          item.policy_id || "-",
+          item.type || item.content_type || "unknown",
+          responseText,
+          "Released from Claim Manager lookup",
+          req.user?.id || null,
+          req.user?.full_name || req.user?.email || null
+        );
+      }
+
+      released.push({ network_id: networkId, claim_id: claimId, response: result.data || {} });
+    } catch (error) {
+      errors.push({ network_id: networkId, claim_id: claimId, message: getGoogleError(error) });
+    }
+  }
+
+  res.json({
+    success: errors.length === 0,
+    released,
+    errors,
+    message: `Released ${released.length} claim${released.length === 1 ? "" : "s"}${errors.length ? `, ${errors.length} failed` : ""}`
+  });
+}
+
+async function createClaim(req, res) {
+  const errorMessage = validateClaimBody(req.body || {});
+  if (errorMessage) {
+    return res.status(400).json({ success: false, message: errorMessage });
+  }
+
+  const networkId = Number(req.body.network_id);
+  const videoId = String(req.body.video_id || "").trim();
+  const assetId = String(req.body.asset_id || "").trim();
+  const policyId = String(req.body.policy_id || "").trim();
+  const contentType = String(req.body.content_type || "audiovisual").trim() || "audiovisual";
+  const note = String(req.body.note || "").trim();
+
+  let claimRowId = null;
+  try {
+    const result = db.prepare(`
+      INSERT INTO content_id_claims (
+        network_id, video_id, asset_id, policy_id, content_type, status, note, created_by, created_by_name
+      )
+      VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+    `).run(
+      networkId,
+      videoId,
+      assetId,
+      policyId,
+      contentType,
+      note || null,
+      req.user?.id || null,
+      req.user?.full_name || req.user?.email || null
+    );
+    claimRowId = result.lastInsertRowid;
+
+    const googleResult = await createGoogleClaim(networkId, {
+      video_id: videoId,
+      asset_id: assetId,
+      policy_id: policyId,
+      content_type: contentType
+    });
+    const claimData = googleResult.data || {};
+    const nextStatus = String(claimData.status || "created").toLowerCase();
+
+    db.prepare(`
+      UPDATE content_id_claims
+      SET network_name = ?,
+          content_owner_id = ?,
+          claim_id = ?,
+          status = ?,
+          claim_response = ?,
+          error_message = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      googleResult.network.name,
+      googleResult.contentOwnerId,
+      claimData.id || claimData.claimId || null,
+      nextStatus,
+      JSON.stringify(claimData),
+      claimRowId
+    );
+
+    const claim = db.prepare("SELECT * FROM content_id_claims WHERE id = ?").get(claimRowId);
+    res.json({ success: true, claim });
+  } catch (error) {
+    const message = getGoogleError(error);
+    if (claimRowId) {
+      const network = db.prepare("SELECT name, network_code FROM networks WHERE id = ?").get(networkId);
+      db.prepare(`
+        UPDATE content_id_claims
+        SET network_name = COALESCE(?, network_name),
+            content_owner_id = COALESCE(?, content_owner_id),
+            status = 'error',
+            error_message = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(network?.name || null, network?.network_code || null, message, claimRowId);
+      const claim = db.prepare("SELECT * FROM content_id_claims WHERE id = ?").get(claimRowId);
+      return res.status(error.status || error.response?.status || 400).json({ success: false, message, claim });
+    }
+
+    res.status(error.status || error.response?.status || 400).json({ success: false, message });
+  }
+}
+
+async function syncClaim(req, res) {
+  const id = Number(req.params.id);
+  const claim = db.prepare("SELECT * FROM content_id_claims WHERE id = ?").get(id);
+  if (!claim) return res.status(404).json({ success: false, message: "Claim history not found" });
+  if (!claim.claim_id) return res.status(400).json({ success: false, message: "This claim does not have a Google claim ID yet" });
+
+  try {
+    const googleResult = await getGoogleClaim(claim.network_id, claim.claim_id);
+    const claimData = googleResult.data || {};
+    const nextStatus = String(claimData.status || claim.status || "synced").toLowerCase();
+    db.prepare(`
+      UPDATE content_id_claims
+      SET network_name = ?,
+          content_owner_id = ?,
+          status = ?,
+          claim_response = ?,
+          error_message = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      googleResult.network.name,
+      googleResult.contentOwnerId,
+      nextStatus,
+      JSON.stringify(claimData),
+      id
+    );
+    res.json({ success: true, claim: db.prepare("SELECT * FROM content_id_claims WHERE id = ?").get(id) });
+  } catch (error) {
+    const message = getGoogleError(error);
+    db.prepare(`
+      UPDATE content_id_claims
+      SET error_message = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(message, id);
+    res.status(error.status || error.response?.status || 400).json({ success: false, message });
+  }
+}
+
+function deleteClaimHistory(req, res) {
+  const id = Number(req.params.id);
+  const claim = db.prepare("SELECT * FROM content_id_claims WHERE id = ?").get(id);
+  if (!claim) return res.status(404).json({ success: false, message: "Claim history not found" });
+
+  db.prepare("DELETE FROM content_id_claims WHERE id = ?").run(id);
+  res.json({ success: true });
+}
+
 module.exports = {
   addCodes,
+  createClaim,
   createArtist,
   createLabel,
   deleteCode,
+  deleteClaimHistory,
   deleteArtist,
   deleteLabel,
   deleteProduct,
   getAvailableCodes,
   getCodeSummary,
   getProduct,
+  listClaims,
   listArtists,
   listCodes,
+  listCmsNetworks,
   listLabels,
   listProducts,
+  releaseClaims,
   saveProduct,
+  searchClaims,
+  syncLabelsFromCms,
+  syncClaim,
   updateArtist,
   updateLabel,
   updateCode,

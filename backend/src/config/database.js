@@ -393,6 +393,16 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS user_content_id_labels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    label_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, label_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (label_id) REFERENCES content_id_labels(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS content_id_artists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -536,6 +546,28 @@ db.exec(`
     FOREIGN KEY (track_id) REFERENCES content_id_tracks(id) ON DELETE SET NULL
   );
 
+  CREATE TABLE IF NOT EXISTS content_id_claims (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    network_id INTEGER NOT NULL,
+    network_name TEXT,
+    content_owner_id TEXT,
+    claim_id TEXT,
+    video_id TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
+    policy_id TEXT NOT NULL,
+    content_type TEXT NOT NULL DEFAULT 'audiovisual',
+    status TEXT NOT NULL DEFAULT 'pending',
+    claim_response TEXT,
+    error_message TEXT,
+    note TEXT,
+    created_by INTEGER,
+    created_by_name TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (network_id) REFERENCES networks(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+  );
+
   CREATE TABLE IF NOT EXISTS email_notification_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     partner_id INTEGER,
@@ -658,6 +690,8 @@ db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_products_created ON content_i
 db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_tracks_product ON content_id_tracks(product_id)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_track_artists_track ON content_id_track_artists(track_id)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_track_artists_artist ON content_id_track_artists(artist_id)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_claims_network_status ON content_id_claims(network_id, status)");
+db.exec("CREATE INDEX IF NOT EXISTS idx_content_id_claims_video ON content_id_claims(video_id)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_expense_transactions_account_date ON expense_transactions(account_id, transaction_date)");
 db.exec("CREATE INDEX IF NOT EXISTS idx_expense_revenues_account_date ON expense_revenues(account_id, revenue_date)");
 

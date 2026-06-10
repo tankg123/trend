@@ -5,7 +5,7 @@ const db = require("../config/database");
 const { parseRoles } = require("../middlewares/authMiddleware");
 const { sendVerificationEmail, sendPasswordResetEmail } = require("../services/mailService");
 
-const ROLE_OPTIONS = ["admin", "Account", "Report Manager", "Channel Management", "Content ID", "Expense", "Partner", "Read Only", "user"];
+const ROLE_OPTIONS = ["admin", "Account", "Report Manager", "Channel Management", "Content ID", "Expense", "Partner", "Claim Manager", "Read Only", "user"];
 const ROLE_LOOKUP = new Map(ROLE_OPTIONS.map((role) => [role.toLowerCase(), role]));
 ROLE_LOOKUP.set("readonly", "Read Only");
 ROLE_LOOKUP.set("read online", "Read Only");
@@ -41,6 +41,12 @@ function isAdminUser(user) {
 
 function isAdminActor(user) {
   return parseRoles(user?.roles?.length ? user.roles : user?.role).some((role) => String(role).toLowerCase() === "admin");
+}
+
+function userHasAnyRole(user, roles) {
+  const userRoles = parseRoles(user?.roles?.length ? user.roles : user?.role).map((role) => String(role).toLowerCase());
+  const wanted = roles.map((role) => String(role).toLowerCase());
+  return userRoles.some((role) => wanted.includes(role));
 }
 
 function isEmail(value = "") {
@@ -873,7 +879,13 @@ exports.getAllUsers = (req, res) => {
             END
           ),
           '[]'
-        ) AS assigned_groups
+        ) AS assigned_groups,
+        COALESCE((
+          SELECT json_group_array(json_object('id', l.id, 'name', l.name, 'display_name', l.display_name))
+          FROM user_content_id_labels ucil
+          JOIN content_id_labels l ON l.id = ucil.label_id
+          WHERE ucil.user_id = u.id
+        ), '[]') AS assigned_labels
       FROM users u
       LEFT JOIN user_group_permissions ugp ON ugp.user_id = u.id
       LEFT JOIN channel_groups g ON g.id = ugp.group_id
@@ -886,7 +898,8 @@ exports.getAllUsers = (req, res) => {
         ...item,
         role: roles[0] || "user",
         roles,
-        assigned_groups: parseJsonArray(item.assigned_groups).filter(Boolean)
+        assigned_groups: parseJsonArray(item.assigned_groups).filter(Boolean),
+        assigned_labels: parseJsonArray(item.assigned_labels).filter(Boolean)
       };
     }).filter((item) => actorIsAdmin || !item.roles.some((role) => String(role).toLowerCase() === "admin"));
 
@@ -951,6 +964,10 @@ exports.updateUserRole = (req, res) => {
 
     if (!roles.includes("Partner")) {
       db.prepare("DELETE FROM user_group_permissions WHERE user_id = ?").run(id);
+    }
+
+    if (!roles.includes("Claim Manager")) {
+      db.prepare("DELETE FROM user_content_id_labels WHERE user_id = ?").run(id);
     }
 
     res.json({
@@ -1067,6 +1084,49 @@ exports.updateUserGroups = (req, res) => {
   }
 };
 
+exports.updateUserContentIdLabels = (req, res) => {
+  try {
+    const { id } = req.params;
+    const labelIds = Array.isArray(req.body?.label_ids)
+      ? req.body.label_ids.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+      : [];
+
+    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (!isAdminActor(req.user) && isAdminUser(user)) {
+      return res.status(403).json({ success: false, message: "Account role cannot update admin users" });
+    }
+
+    if (!userHasRole(user, "Claim Manager")) {
+      return res.status(400).json({ success: false, message: "Only Claim Manager role can be assigned labels" });
+    }
+
+    const uniqueLabelIds = [...new Set(labelIds)];
+    const validLabels = uniqueLabelIds.length
+      ? db.prepare(`SELECT id FROM content_id_labels WHERE id IN (${uniqueLabelIds.map(() => "?").join(",")})`).all(...uniqueLabelIds).map((row) => row.id)
+      : [];
+
+    const transaction = db.transaction(() => {
+      db.prepare("DELETE FROM user_content_id_labels WHERE user_id = ?").run(id);
+      const stmt = db.prepare("INSERT OR IGNORE INTO user_content_id_labels (user_id, label_id) VALUES (?, ?)");
+      validLabels.forEach((labelId) => stmt.run(id, labelId));
+    });
+
+    transaction();
+
+    res.json({
+      success: true,
+      message: "Claim labels updated",
+      data: { label_ids: validLabels }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Could not update claim labels", error: error.message });
+  }
+};
+
 exports.deleteUser = (req, res) => {
   try {
     const { id } = req.params;
@@ -1094,6 +1154,7 @@ exports.deleteUser = (req, res) => {
     }
 
     db.prepare("DELETE FROM user_group_permissions WHERE user_id = ?").run(id);
+    db.prepare("DELETE FROM user_content_id_labels WHERE user_id = ?").run(id);
 
     const result = db
       .prepare("DELETE FROM users WHERE id = ?")

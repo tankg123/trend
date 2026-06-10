@@ -1,28 +1,40 @@
 const express = require("express");
 const {
   addCodes,
+  createClaim,
   createArtist,
   createLabel,
   deleteCode,
+  deleteClaimHistory,
   deleteArtist,
   deleteLabel,
   deleteProduct,
   getAvailableCodes,
   getCodeSummary,
   getProduct,
+  listClaims,
   listArtists,
   listCodes,
+  listCmsNetworks,
   listLabels,
   listProducts,
+  releaseClaims,
   saveProduct,
+  searchClaims,
+  syncClaim,
+  syncLabelsFromCms,
   updateArtist,
   updateLabel,
   updateCode
 } = require("../controllers/contentIdController");
+const { releaseVideoClaims, searchVideoClaims } = require("../controllers/claimController");
 const { authMiddleware, allowRoles } = require("../middlewares/authMiddleware");
 
 const router = express.Router();
 const CONTENT_ID_ROLES = ["admin", "Content ID"];
+const CLAIM_MANAGER_ROLES = ["admin", "Content ID", "Claim Manager"];
+const LABEL_READ_ROLES = ["admin", "Content ID", "Claim Manager", "Account"];
+const LABEL_WRITE_ROLES = ["admin", "Content ID"];
 
 router.use(authMiddleware);
 
@@ -33,10 +45,19 @@ router.post("/codes", allowRoles(...CONTENT_ID_ROLES), addCodes);
 router.put("/codes/:id", allowRoles(...CONTENT_ID_ROLES), updateCode);
 router.delete("/codes/:id", allowRoles(...CONTENT_ID_ROLES), deleteCode);
 
-router.get("/labels", allowRoles(...CONTENT_ID_ROLES), listLabels);
-router.post("/labels", allowRoles(...CONTENT_ID_ROLES), createLabel);
-router.put("/labels/:id", allowRoles(...CONTENT_ID_ROLES), updateLabel);
-router.delete("/labels/:id", allowRoles(...CONTENT_ID_ROLES), deleteLabel);
+router.get("/cms-networks", allowRoles(...CLAIM_MANAGER_ROLES), listCmsNetworks);
+router.get("/claims", allowRoles(...CONTENT_ID_ROLES), listClaims);
+router.post("/claims/search", allowRoles(...CLAIM_MANAGER_ROLES), searchVideoClaims);
+router.post("/claims/release", allowRoles(...CLAIM_MANAGER_ROLES), releaseVideoClaims);
+router.post("/claims", allowRoles(...CONTENT_ID_ROLES), createClaim);
+router.post("/claims/:id/sync", allowRoles(...CONTENT_ID_ROLES), syncClaim);
+router.delete("/claims/:id", allowRoles(...CONTENT_ID_ROLES), deleteClaimHistory);
+
+router.get("/labels", allowRoles(...LABEL_READ_ROLES), listLabels);
+router.post("/labels", allowRoles(...LABEL_WRITE_ROLES), createLabel);
+router.post("/labels/sync-cms", allowRoles(...LABEL_WRITE_ROLES), syncLabelsFromCms);
+router.put("/labels/:id", allowRoles(...LABEL_WRITE_ROLES), updateLabel);
+router.delete("/labels/:id", allowRoles(...LABEL_WRITE_ROLES), deleteLabel);
 
 router.get("/artists", allowRoles(...CONTENT_ID_ROLES), listArtists);
 router.post("/artists", allowRoles(...CONTENT_ID_ROLES), createArtist);
