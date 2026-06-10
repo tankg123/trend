@@ -179,11 +179,14 @@ export function AuthProvider({ children }) {
       const isReportManager = hasRole(roles, "Report Manager");
       const isChannelManagement = hasRole(roles, "Channel Management");
       const isContentIdRole = hasRole(roles, "Content ID");
+      const isClaimManagerRole = hasRole(roles, "Claim Manager");
       const isExpenseRole = hasRole(roles, "Expense");
       const isPartnerRole = hasRole(roles, "Partner");
       const isAccountRole = hasRole(roles, "Account");
       const isReadOnly = hasRole(roles, "Read Only");
       const canViewContentIdSettings = isAdmin || isContentIdRole;
+      const canViewContentIdFull = isAdmin || isContentIdRole;
+      const canViewContentIdClaim = canViewContentIdFull || isClaimManagerRole;
       const canViewPartnerDashboard = isPartnerRole && !isAdmin && !isReportManager;
 
       return (
@@ -203,6 +206,7 @@ export function AuthProvider({ children }) {
         isReportManager,
         isChannelManagement,
         isContentIdRole,
+        isClaimManagerRole,
         isExpenseRole,
         isPartnerRole,
         isAccountRole,
@@ -213,7 +217,9 @@ export function AuthProvider({ children }) {
         canViewPartnerDashboard,
         canViewPartnerGroups: isAdmin || isReportManager || isPartnerRole,
         canViewChannelManagement: isAdmin || isChannelManagement,
-        canViewContentId: isAdmin || isContentIdRole,
+        canViewContentId: canViewContentIdClaim,
+        canViewContentIdFull,
+        canViewContentIdClaim,
         canViewExpense: isAdmin || isExpenseRole,
         canViewPartner: isAdmin || isReportManager || isChannelManagement,
         canViewAccount: isAdmin || isAccountRole,

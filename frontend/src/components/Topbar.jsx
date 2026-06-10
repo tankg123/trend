@@ -44,7 +44,7 @@ function PasswordInput({ label, value, onChange, shown, onToggle }) {
 
 export default function Topbar() {
   const location = useLocation();
-  const { user, logout, updateSavedUser, canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
+  const { user, logout, updateSavedUser, canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewContentIdFull, canViewContentIdClaim, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
   const { language, setLanguage, t } = useI18n();
   const { theme, setTheme } = useTheme();
   const { settings } = useSystemSettings();
@@ -99,12 +99,13 @@ export default function Topbar() {
       title: "Content ID",
       show: canViewContentId,
       items: [
-        { name: "Creator CSV", path: "/content-id/creator", icon: FileAudio },
-        { name: "Web Asset Reference", path: "/content-id/web-assets", icon: FileVideo },
-        { name: "Product Manager", path: "/content-id/products", icon: PackageSearch },
-        { name: "Label", path: "/content-id/labels", icon: Tags },
-        { name: "Artist", path: "/content-id/artists", icon: UserRound }
-      ]
+        { name: "Creator CSV", path: "/content-id/creator", icon: FileAudio, show: canViewContentIdFull },
+        { name: "Web Asset Reference", path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
+        { name: "Product Manager", path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
+        { name: "Claim Manager", path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
+        { name: "Label", path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
+        { name: "Artist", path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
+      ].filter((item) => item.show)
     },
     {
       title: t("expense"),

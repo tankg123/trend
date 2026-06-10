@@ -19,7 +19,7 @@ import {
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 
-const ROLE_OPTIONS = ["admin", "Account", "Report Manager", "Channel Management", "Content ID", "Expense", "Partner", "Read Only", "user"];
+const ROLE_OPTIONS = ["admin", "Account", "Report Manager", "Channel Management", "Content ID", "Expense", "Partner", "Claim Manager", "Read Only", "user"];
 
 function roleList(item) {
   if (Array.isArray(item?.roles)) return item.roles.filter(Boolean);
@@ -45,10 +45,12 @@ export default function AccountPage() {
 
   const [users, setUsers] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [labels, setLabels] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [message, setMessage] = useState("");
   const [pendingRole, setPendingRole] = useState({});
   const [pendingGroup, setPendingGroup] = useState({});
+  const [pendingLabel, setPendingLabel] = useState({});
   const [resetTarget, setResetTarget] = useState(null);
   const [resetForm, setResetForm] = useState({ password: "", confirm_password: "" });
   const [resetLoading, setResetLoading] = useState(false);
@@ -61,13 +63,15 @@ export default function AccountPage() {
     try {
       setLoadingUsers(true);
 
-      const [usersRes, groupsRes] = await Promise.all([
+      const [usersRes, groupsRes, labelsRes] = await Promise.all([
         api.get("/auth/users"),
-        api.get("/reports/groups")
+        api.get("/reports/groups"),
+        api.get("/content-id/labels")
       ]);
 
       setUsers(usersRes.data.data || []);
       setGroups(groupsRes.data.data || []);
+      setLabels(labelsRes.data.labels || labelsRes.data.data || []);
     } catch (error) {
       setMessage(
         error.response?.data?.message ||
@@ -153,6 +157,32 @@ export default function AccountPage() {
       .map((group) => Number(group.id))
       .filter((id) => id !== Number(groupId));
     updatePartnerGroups(item.id, nextIds);
+  }
+
+  async function updateClaimLabels(id, labelIds) {
+    try {
+      await api.put(`/auth/users/${id}/content-id-labels`, { label_ids: labelIds });
+      setMessage("Claim labels updated");
+      fetchUsers();
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not update claim labels");
+    }
+  }
+
+  function addClaimLabel(item) {
+    const labelId = Number(pendingLabel[item.id]);
+    if (!labelId) return;
+
+    const currentIds = (item.assigned_labels || []).map((label) => Number(label.id));
+    updateClaimLabels(item.id, [...new Set([...currentIds, labelId])]);
+    setPendingLabel((current) => ({ ...current, [item.id]: "" }));
+  }
+
+  function removeClaimLabel(item, labelId) {
+    const nextIds = (item.assigned_labels || [])
+      .map((label) => Number(label.id))
+      .filter((id) => id !== Number(labelId));
+    updateClaimLabels(item.id, nextIds);
   }
 
   async function deleteUser(id) {
@@ -321,6 +351,7 @@ export default function AccountPage() {
                   <th className="p-4">Role</th>
                   <th className="p-4">Status</th>
                   <th className="p-4">Partner Groups</th>
+                  <th className="p-4">Claim Labels</th>
                   <th className="p-4">Created</th>
                   <th className="p-4 text-right">Action</th>
                 </tr>
@@ -436,6 +467,49 @@ export default function AccountPage() {
                       )}
                     </td>
 
+                    <td className="p-4 min-w-[360px]">
+                      {hasRole(item, "Claim Manager") ? (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            {(item.assigned_labels || []).map((label) => (
+                              <span key={label.id} className="inline-flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1 text-xs font-black text-violet-700">
+                                {label.display_name || label.name}
+                                <button type="button" onClick={() => removeClaimLabel(item, label.id)} className="text-violet-500 hover:text-red-500">
+                                  <X size={13} />
+                                </button>
+                              </span>
+                            ))}
+                            {!(item.assigned_labels || []).length && <span className="text-xs text-slate-400">No labels assigned</span>}
+                          </div>
+                          <div className="flex gap-2">
+                            <select
+                              value={pendingLabel[item.id] || ""}
+                              onChange={(event) => setPendingLabel((current) => ({ ...current, [item.id]: event.target.value }))}
+                              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold"
+                            >
+                              <option value="">Add claim label</option>
+                              {labels
+                                .filter((label) => !(item.assigned_labels || []).some((assigned) => Number(assigned.id) === Number(label.id)))
+                                .map((label) => (
+                                  <option key={label.id} value={label.id}>
+                                    {label.display_name || label.name}
+                                  </option>
+                                ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => addClaimLabel(item)}
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600 text-white"
+                            >
+                              <Plus size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
+
                     <td className="p-4 text-slate-500">
                       {item.created_at}
                     </td>
@@ -486,7 +560,7 @@ export default function AccountPage() {
                 {users.length === 0 && (
                   <tr>
                     <td
-                      colSpan="8"
+                      colSpan="9"
                       className="p-8 text-center text-slate-500"
                     >
                       Chưa có user nào.

@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, RefreshCw, Save, Tags, Trash2, UserRound } from "lucide-react";
+import { CloudDownload, Loader2, Pencil, RefreshCw, Save, Tags, Trash2, UserRound } from "lucide-react";
 import api from "../api/api";
+import { useAuth } from "../context/AuthContext";
 
 export default function ContentIdCatalogPage({ type }) {
+  const { canViewContentIdFull } = useAuth();
   const isArtist = type === "artists";
   const endpoint = isArtist ? "/content-id/artists" : "/content-id/labels";
   const title = isArtist ? "Artist" : "Label";
   const Icon = isArtist ? UserRound : Tags;
+  const canManageCatalog = canViewContentIdFull;
   const [items, setItems] = useState([]);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState({ id: null, name: "", display_name: "", notes: "" });
   const [message, setMessage] = useState("");
+  const [syncingLabels, setSyncingLabels] = useState(false);
 
   const totals = useMemo(() => {
     return items.reduce((sum, item) => ({
@@ -55,6 +59,24 @@ export default function ContentIdCatalogPage({ type }) {
     }
   }
 
+  async function syncCmsLabels() {
+    if (isArtist || syncingLabels) return;
+    setSyncingLabels(true);
+    setMessage("");
+    try {
+      const res = await api.post("/content-id/labels/sync-cms");
+      const created = res.data.created || 0;
+      const updated = res.data.updated || 0;
+      const failed = (res.data.cmsResults || []).filter((item) => !item.ok).length;
+      setMessage(`CMS labels synced. Created ${created}, updated ${updated}${failed ? `, ${failed} CMS failed` : ""}.`);
+      await loadItems();
+    } catch (error) {
+      setMessage(error.response?.data?.message || "Could not sync CMS labels.");
+    } finally {
+      setSyncingLabels(false);
+    }
+  }
+
   function editItem(item) {
     setForm({
       id: item.id,
@@ -81,7 +103,18 @@ export default function ContentIdCatalogPage({ type }) {
               Manage {title.toLowerCase()} catalog and see linked albums and songs.
             </p>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {!isArtist && canManageCatalog && (
+              <button
+                type="button"
+                onClick={syncCmsLabels}
+                disabled={syncingLabels}
+                className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {syncingLabels ? <Loader2 className="animate-spin" size={16} /> : <CloudDownload size={16} />}
+                Sync CMS labels
+              </button>
+            )}
             <div className="rounded-2xl bg-slate-50 px-4 py-3">
               <p className="text-xs font-black text-slate-400">TOTAL</p>
               <p className="text-xl font-black text-slate-950">{items.length}</p>
@@ -99,42 +132,44 @@ export default function ContentIdCatalogPage({ type }) {
         {message && <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">{message}</div>}
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[420px_1fr]">
-        <form onSubmit={saveItem} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-black text-slate-950">{form.id ? `Edit ${title}` : `Create ${title}`}</h2>
-          <div className="mt-4 space-y-3">
-            <input
-              value={form.name}
-              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-              placeholder={`${title} name`}
-              className="w-full rounded-2xl border border-slate-200 px-4 py-3"
-              required
-            />
-            <input
-              value={form.display_name}
-              onChange={(event) => setForm((current) => ({ ...current, display_name: event.target.value }))}
-              placeholder="Display name"
-              className="w-full rounded-2xl border border-slate-200 px-4 py-3"
-            />
-            <textarea
-              value={form.notes}
-              onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-              rows={5}
-              placeholder="Internal notes"
-              className="w-full rounded-2xl border border-slate-200 p-4"
-            />
-            <div className="flex gap-2">
-              <button className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-black text-white">
-                <Save size={17} /> Save
-              </button>
-              {form.id && (
-                <button type="button" onClick={() => setForm({ id: null, name: "", display_name: "", notes: "" })} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700">
-                  Cancel
+      <section className={canManageCatalog ? "grid gap-5 xl:grid-cols-[420px_1fr]" : "grid gap-5"}>
+        {canManageCatalog && (
+          <form onSubmit={saveItem} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-black text-slate-950">{form.id ? `Edit ${title}` : `Create ${title}`}</h2>
+            <div className="mt-4 space-y-3">
+              <input
+                value={form.name}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder={`${title} name`}
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3"
+                required
+              />
+              <input
+                value={form.display_name}
+                onChange={(event) => setForm((current) => ({ ...current, display_name: event.target.value }))}
+                placeholder="Display name"
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3"
+              />
+              <textarea
+                value={form.notes}
+                onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+                rows={5}
+                placeholder="Internal notes"
+                className="w-full rounded-2xl border border-slate-200 p-4"
+              />
+              <div className="flex gap-2">
+                <button className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-black text-white">
+                  <Save size={17} /> Save
                 </button>
-              )}
+                {form.id && (
+                  <button type="button" onClick={() => setForm({ id: null, name: "", display_name: "", notes: "" })} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black text-slate-700">
+                    Cancel
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        </form>
+          </form>
+        )}
 
         <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
@@ -156,7 +191,7 @@ export default function ContentIdCatalogPage({ type }) {
                   <th className="px-4 py-3">Albums</th>
                   <th className="px-4 py-3">Songs</th>
                   <th className="px-4 py-3">Updated</th>
-                  <th className="px-4 py-3">Action</th>
+                  {canManageCatalog && <th className="px-4 py-3">Action</th>}
                 </tr>
               </thead>
               <tbody>
@@ -170,21 +205,23 @@ export default function ContentIdCatalogPage({ type }) {
                     <td className="px-4 py-3 font-black text-blue-600">{item.album_count || 0}</td>
                     <td className="px-4 py-3 font-black text-emerald-600">{item.song_count || 0}</td>
                     <td className="px-4 py-3 text-xs text-slate-500">{item.updated_at || item.created_at}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <button onClick={() => editItem(item)} className="rounded-xl border border-slate-200 p-2 text-slate-600">
-                          <Pencil size={15} />
-                        </button>
-                        <button onClick={() => deleteItem(item)} className="rounded-xl bg-red-50 p-2 text-red-500">
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
+                    {canManageCatalog && (
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          <button onClick={() => editItem(item)} className="rounded-xl border border-slate-200 p-2 text-slate-600">
+                            <Pencil size={15} />
+                          </button>
+                          <button onClick={() => deleteItem(item)} className="rounded-xl bg-red-50 p-2 text-red-500">
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {!items.length && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-slate-500">No {title.toLowerCase()} yet.</td>
+                    <td colSpan={canManageCatalog ? 6 : 5} className="px-4 py-12 text-center text-slate-500">No {title.toLowerCase()} yet.</td>
                   </tr>
                 )}
               </tbody>

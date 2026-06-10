@@ -40,6 +40,7 @@ import ContentIdProductsPage from "./pages/ContentIdProductsPage";
 import ContentIdSettingsPage from "./pages/ContentIdSettingsPage";
 import ContentIdCatalogPage from "./pages/ContentIdCatalogPage";
 import ContentIdWebAssetPage from "./pages/ContentIdWebAssetPage";
+import ContentIdClaimPage from "./pages/ContentIdClaimPage";
 import { ExpenseAccountsPage, ExpenseCategoriesPage, ExpenseOverviewPage, ExpenseRevenuePage, ExpenseTransactionsPage } from "./pages/ExpensePages";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { I18nProvider, useI18n } from "./context/I18nContext";
@@ -127,11 +128,11 @@ function LockedPage() {
 
 function MobileNav() {
   const location = useLocation();
-  const { canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups, canViewPartnerDashboard } = useAuth();
+  const { canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewContentIdFull, canViewContentIdClaim, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups, canViewPartnerDashboard } = useAuth();
   const { t } = useI18n();
   const channelPaths = ["/channel-management", "/channel-management/collaborators", "/channel-management/sharing"];
   const reportPaths = ["/report-dashboard", "/partner-dashboard", "/reports", "/export-multi", "/channels", "/exchange-rates", "/companies", "/groups"];
-  const contentIdPaths = ["/content-id/creator", "/content-id/web-assets", "/content-id/products", "/content-id/labels", "/content-id/artists"];
+  const contentIdPaths = ["/content-id/creator", "/content-id/web-assets", "/content-id/products", "/content-id/claims", "/content-id/labels", "/content-id/artists"];
   const expensePaths = ["/expenses/overview", "/expenses/categories", "/expenses/transactions", "/expenses/accounts", "/expenses/revenue"];
   const partnerPaths = ["/partners", "/partners/overview", "/partners/list", "/partners/contracts"];
   const emailPaths = ["/email/notification"];
@@ -198,6 +199,15 @@ function MobileNav() {
       icon: UsersRound,
       show: canViewReports || canViewPartnerDashboard
     }
+  ].filter((item) => item.show);
+
+  const contentIdMenus = [
+    { name: "Creator CSV", path: "/content-id/creator", icon: FileAudio, show: canViewContentIdFull },
+    { name: "Web Asset Reference", path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
+    { name: "Product Manager", path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
+    { name: "Claim Manager", path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
+    { name: "Label", path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
+    { name: "Artist", path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
   ].filter((item) => item.show);
 
   const menus = [
@@ -334,13 +344,7 @@ function MobileNav() {
             </button>
             {contentIdOpen && (
               <div className="grid grid-cols-2 gap-2 mt-2">
-                {[
-                  { name: "Creator CSV", path: "/content-id/creator", icon: FileAudio },
-                  { name: "Web Asset Reference", path: "/content-id/web-assets", icon: FileVideo },
-                  { name: "Product Manager", path: "/content-id/products", icon: PackageSearch },
-                  { name: "Label", path: "/content-id/labels", icon: Tags },
-                  { name: "Artist", path: "/content-id/artists", icon: UserRound }
-                ].map((item) => {
+                {contentIdMenus.map((item) => {
                   const Icon = item.icon;
                   const active = location.pathname === item.path;
                   return (
@@ -523,7 +527,7 @@ function MobileNav() {
 }
 
 function PrivateLayout() {
-  const { user, authLoading, canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups, canViewPartnerDashboard } = useAuth();
+  const { user, authLoading, canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewContentIdFull, canViewContentIdClaim, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups, canViewPartnerDashboard } = useAuth();
 
   if (authLoading) {
     return (
@@ -713,26 +717,30 @@ function PrivateLayout() {
               )
             }
           />
-          <Route path="/content-id" element={<Navigate to="/content-id/creator" replace />} />
+          <Route path="/content-id" element={<Navigate to={canViewContentIdFull ? "/content-id/creator" : "/content-id/claims"} replace />} />
           <Route
             path="/content-id/creator"
-            element={canViewContentId ? <ContentIdCreatorPage /> : <Navigate to={defaultPath} replace />}
+            element={canViewContentIdFull ? <ContentIdCreatorPage /> : <Navigate to={defaultPath} replace />}
           />
           <Route
             path="/content-id/web-assets"
-            element={canViewContentId ? <ContentIdWebAssetPage /> : <Navigate to={defaultPath} replace />}
+            element={canViewContentIdFull ? <ContentIdWebAssetPage /> : <Navigate to={defaultPath} replace />}
           />
           <Route
             path="/content-id/products"
-            element={canViewContentId ? <ContentIdProductsPage /> : <Navigate to={defaultPath} replace />}
+            element={canViewContentIdFull ? <ContentIdProductsPage /> : <Navigate to={defaultPath} replace />}
+          />
+          <Route
+            path="/content-id/claims"
+            element={canViewContentIdClaim ? <ContentIdClaimPage /> : <Navigate to={defaultPath} replace />}
           />
           <Route
             path="/content-id/labels"
-            element={canViewContentId ? <ContentIdCatalogPage type="labels" /> : <Navigate to={defaultPath} replace />}
+            element={canViewContentIdClaim ? <ContentIdCatalogPage type="labels" /> : <Navigate to={defaultPath} replace />}
           />
           <Route
             path="/content-id/artists"
-            element={canViewContentId ? <ContentIdCatalogPage type="artists" /> : <Navigate to={defaultPath} replace />}
+            element={canViewContentIdFull ? <ContentIdCatalogPage type="artists" /> : <Navigate to={defaultPath} replace />}
           />
           <Route path="/expenses" element={<Navigate to="/expenses/overview" replace />} />
           <Route path="/expenses/overview" element={canViewExpense ? <ExpenseOverviewPage /> : <Navigate to={defaultPath} replace />} />
