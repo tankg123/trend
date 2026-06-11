@@ -1,6 +1,7 @@
 const express = require("express");
 const {
   addCodes,
+  addWhitelistChannels,
   createClaim,
   createArtist,
   createLabel,
@@ -9,6 +10,7 @@ const {
   deleteArtist,
   deleteLabel,
   deleteProduct,
+  deleteWhitelistChannels,
   getAvailableCodes,
   getCodeSummary,
   getProduct,
@@ -18,11 +20,14 @@ const {
   listCmsNetworks,
   listLabels,
   listProducts,
+  listWhitelists,
   releaseClaims,
   saveProduct,
   searchClaims,
   syncClaim,
   syncLabelsFromCms,
+  syncWhitelistChannelInfo,
+  syncWhitelists,
   updateArtist,
   updateLabel,
   updateCode
@@ -58,6 +63,12 @@ router.post("/labels", allowRoles(...LABEL_WRITE_ROLES), createLabel);
 router.post("/labels/sync-cms", allowRoles(...LABEL_WRITE_ROLES), syncLabelsFromCms);
 router.put("/labels/:id", allowRoles(...LABEL_WRITE_ROLES), updateLabel);
 router.delete("/labels/:id", allowRoles(...LABEL_WRITE_ROLES), deleteLabel);
+
+router.get("/whitelists", allowRoles(...CONTENT_ID_ROLES), listWhitelists);
+router.post("/whitelists/sync-cms", allowRoles(...CONTENT_ID_ROLES), syncWhitelists);
+router.post("/whitelists/sync-channel-info", allowRoles(...CONTENT_ID_ROLES), syncWhitelistChannelInfo);
+router.post("/whitelists", allowRoles(...CONTENT_ID_ROLES), addWhitelistChannels);
+router.delete("/whitelists", allowRoles(...CONTENT_ID_ROLES), deleteWhitelistChannels);
 
 router.get("/artists", allowRoles(...CONTENT_ID_ROLES), listArtists);
 router.post("/artists", allowRoles(...CONTENT_ID_ROLES), createArtist);

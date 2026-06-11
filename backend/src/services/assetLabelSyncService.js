@@ -75,6 +75,43 @@ async function listCmsAssetLabels(accountId) {
 async function syncAssetLabelsFromCms() {
   const accounts = listAccounts();
   if (!accounts.length) {
+    const connected = db.prepare(`
+      SELECT id, name, network_code, cms_auth_status, cms_refresh_token, cms_auth_error
+      FROM networks
+      WHERE cms_auth_status = 'connected'
+      ORDER BY name COLLATE NOCASE ASC
+    `).all();
+
+    if (connected.length) {
+      const missingNetworkId = connected
+        .filter((row) => !String(row.network_code || "").trim())
+        .map((row) => row.name);
+      if (missingNetworkId.length) {
+        throw new Error(`CMS is connected but Network ID is missing for: ${missingNetworkId.join(", ")}. Please fill ID Network in Settings > Network.`);
+      }
+
+      const missingRefreshToken = connected
+        .filter((row) => !String(row.cms_refresh_token || "").trim())
+        .map((row) => row.name);
+      if (missingRefreshToken.length) {
+        throw new Error(`CMS refresh token is missing for: ${missingRefreshToken.join(", ")}. Please re-auth CMS in Settings > Network.`);
+      }
+    }
+
+    const errored = db.prepare(`
+      SELECT name, cms_auth_status, cms_auth_error
+      FROM networks
+      WHERE cms_auth_status IN ('pending', 'error')
+      ORDER BY updated_at DESC, name COLLATE NOCASE ASC
+      LIMIT 5
+    `).all();
+    if (errored.length) {
+      const detail = errored
+        .map((row) => `${row.name}: ${row.cms_auth_status}${row.cms_auth_error ? ` (${row.cms_auth_error})` : ""}`)
+        .join("; ");
+      throw new Error(`No usable connected CMS network found. Current CMS auth state: ${detail}.`);
+    }
+
     throw new Error("No connected CMS network found. Please authorize CMS in Settings > Network first.");
   }
 
@@ -110,6 +147,8 @@ async function syncAssetLabelsFromCms() {
         skipped: accountSkipped
       });
     } catch (error) {
+      const message = error.response?.data?.error?.message || error.message;
+      console.warn(`[asset-label-sync] ${account.cms_name}: ${message}`);
       cmsResults.push({
         ok: false,
         cmsName: account.cms_name,
@@ -117,7 +156,7 @@ async function syncAssetLabelsFromCms() {
         created: 0,
         updated: 0,
         skipped: 0,
-        message: error.response?.data?.error?.message || error.message
+        message
       });
     }
   }

@@ -529,10 +529,13 @@ module.exports = {
   createClaim,
   getClaim,
   enrichClaimsWithAssets,
+  getAccessToken,
+  getConnectedNetwork,
   getGoogleError,
   getAsset,
   getAssetsByIds,
   listClaimsByChannel,
   listClaimsByVideo,
-  releaseClaim
+  releaseClaim,
+  YOUTUBE_PARTNER_API
 };

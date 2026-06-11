@@ -9,6 +9,15 @@ const {
   releaseClaim: releaseGoogleClaim
 } = require("../services/googleContentIdService");
 const { syncAssetLabelsFromCms } = require("../services/assetLabelSyncService");
+const {
+  deleteWhitelistFromCms,
+  insertWhitelistToCms,
+  listWhitelistsFromCms
+} = require("../services/cmsWhitelistService");
+const {
+  getChannelFromYoutube,
+  getChannelsFromYoutube
+} = require("../services/youtubeService");
 const { parseRoles } = require("../middlewares/authMiddleware");
 
 const CODE_TYPES = new Set(["ISRC", "UPC"]);
@@ -678,6 +687,376 @@ function listCmsNetworks(req, res) {
   res.json({ success: true, networks });
 }
 
+function parseChannelInputs(value) {
+  const list = Array.isArray(value)
+    ? value
+    : String(value || "").split(/[\r\n,;\t]+/);
+  const seen = new Set();
+  const results = [];
+
+  list.forEach((item) => {
+    let input = String(item || "").trim();
+    if (!input) return;
+    const channelMatch = input.match(/(?:youtube\.com\/channel\/)(UC[A-Za-z0-9_-]+)/i);
+    if (channelMatch) input = channelMatch[1];
+    if (/^[A-Za-z0-9_-]{22}$/.test(input) && !input.startsWith("UC")) {
+      input = `UC${input}`;
+    }
+    const key = input.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      results.push(input);
+    }
+  });
+
+  return results;
+}
+
+function toWhitelistChannelRow(networkId, contentOwnerId, cmsItem = {}, youtubeChannel = {}) {
+  return {
+    network_id: Number(networkId),
+    content_owner_id: contentOwnerId || cmsItem.content_owner_id || "",
+    whitelist_id: cmsItem.whitelist_id || cmsItem.id || youtubeChannel.channel_id || "",
+    channel_id: youtubeChannel.channel_id || cmsItem.channel_id || "",
+    channel_title: youtubeChannel.title || cmsItem.channel_title || "",
+    custom_url: youtubeChannel.custom_url || cmsItem.custom_url || "",
+    thumbnail_url: youtubeChannel.thumbnail || cmsItem.thumbnail_url || "",
+    view_count: moneySafeNumber(youtubeChannel.view_count || cmsItem.view_count),
+    subscriber_count: moneySafeNumber(youtubeChannel.subscriber_count || cmsItem.subscriber_count),
+    video_count: moneySafeNumber(youtubeChannel.video_count || cmsItem.video_count)
+  };
+}
+
+const upsertWhitelistStmt = db.prepare(`
+  INSERT INTO content_id_whitelists (
+    network_id,
+    content_owner_id,
+    whitelist_id,
+    channel_id,
+    channel_title,
+    custom_url,
+    thumbnail_url,
+    view_count,
+    subscriber_count,
+    video_count,
+    synced_at,
+    updated_at
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  ON CONFLICT(network_id, channel_id) DO UPDATE SET
+    content_owner_id = excluded.content_owner_id,
+    whitelist_id = COALESCE(NULLIF(excluded.whitelist_id, ''), content_id_whitelists.whitelist_id),
+    channel_title = COALESCE(NULLIF(excluded.channel_title, ''), content_id_whitelists.channel_title),
+    custom_url = COALESCE(NULLIF(excluded.custom_url, ''), content_id_whitelists.custom_url),
+    thumbnail_url = COALESCE(NULLIF(excluded.thumbnail_url, ''), content_id_whitelists.thumbnail_url),
+    view_count = CASE WHEN excluded.view_count > 0 THEN excluded.view_count ELSE content_id_whitelists.view_count END,
+    subscriber_count = CASE WHEN excluded.subscriber_count > 0 THEN excluded.subscriber_count ELSE content_id_whitelists.subscriber_count END,
+    video_count = CASE WHEN excluded.video_count > 0 THEN excluded.video_count ELSE content_id_whitelists.video_count END,
+    synced_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+`);
+
+function upsertWhitelist(row) {
+  if (!row.channel_id) return;
+  upsertWhitelistStmt.run(
+    row.network_id,
+    row.content_owner_id || "",
+    row.whitelist_id || "",
+    row.channel_id,
+    row.channel_title || "",
+    row.custom_url || "",
+    row.thumbnail_url || "",
+    row.view_count || 0,
+    row.subscriber_count || 0,
+    row.video_count || 0
+  );
+}
+
+function isYoutubeQuotaError(error) {
+  const message = String(error?.message || "");
+  return error?.youtube?.reason === "quotaExceeded"
+    || error?.youtube?.reason === "dailyLimitExceeded"
+    || /quotaExceeded|quota exceeded|quota reset/i.test(message);
+}
+
+function pushUniqueError(errors, error) {
+  const key = `${error.network_id || ""}|${error.input || ""}|${error.message || ""}`;
+  if (!errors.some((item) => `${item.network_id || ""}|${item.input || ""}|${item.message || ""}` === key)) {
+    errors.push(error);
+  }
+}
+
+async function resolveWhitelistChannels(inputs) {
+  const parsed = parseChannelInputs(inputs);
+  const idInputs = parsed.filter((input) => /^UC[A-Za-z0-9_-]{20,}$/.test(input));
+  const otherInputs = parsed.filter((input) => !/^UC[A-Za-z0-9_-]{20,}$/.test(input));
+  const channels = new Map();
+  const errors = [];
+
+  if (idInputs.length) {
+    try {
+      const batch = await getChannelsFromYoutube(idInputs, { includeLatest: false });
+      batch.forEach((channel) => channels.set(channel.channel_id, channel));
+      const foundIds = new Set(batch.map((channel) => channel.channel_id));
+      idInputs.forEach((input) => {
+        if (!foundIds.has(input)) errors.push({ input, message: "Channel not found on YouTube Data API" });
+      });
+    } catch (error) {
+      if (isYoutubeQuotaError(error)) {
+        errors.push({
+          input: "YouTube Data API",
+          code: "quotaExceeded",
+          message: error.message || "YouTube API quota exceeded. Whitelist was synced, but channel stats could not be refreshed."
+        });
+      } else {
+        idInputs.forEach((input) => errors.push({ input, message: error.message || "Could not fetch channel from YouTube Data API" }));
+      }
+    }
+  }
+
+  const otherResults = await Promise.allSettled(otherInputs.map((input) => getChannelFromYoutube(input, { includeLatest: false })));
+  otherResults.forEach((result, index) => {
+    const input = otherInputs[index];
+    if (result.status === "fulfilled") {
+      channels.set(result.value.channel_id, result.value);
+    } else {
+      if (isYoutubeQuotaError(result.reason)) {
+        errors.push({
+          input: "YouTube Data API",
+          code: "quotaExceeded",
+          message: result.reason?.message || "YouTube API quota exceeded. Whitelist was synced, but channel stats could not be refreshed."
+        });
+      } else {
+        errors.push({ input, message: result.reason?.message || "Could not fetch channel from YouTube Data API" });
+      }
+    }
+  });
+
+  return { channels: Array.from(channels.values()), errors };
+}
+
+function listWhitelists(req, res) {
+  const networkId = Number(req.query.network_id || 0);
+  const search = String(req.query.search || "").trim();
+  const clauses = [];
+  const params = [];
+
+  if (networkId) {
+    clauses.push("w.network_id = ?");
+    params.push(networkId);
+  }
+
+  if (search) {
+    clauses.push("(w.channel_id LIKE ? OR w.channel_title LIKE ? OR w.custom_url LIKE ? OR n.name LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+  }
+
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const rows = db.prepare(`
+    SELECT
+      w.*,
+      n.name AS network_name,
+      n.network_code
+    FROM content_id_whitelists w
+    LEFT JOIN networks n ON n.id = w.network_id
+    ${where}
+    ORDER BY n.name COLLATE NOCASE ASC, w.channel_title COLLATE NOCASE ASC, w.channel_id ASC
+  `).all(...params);
+
+  const summary = db.prepare(`
+    SELECT COUNT(*) AS total, COUNT(DISTINCT network_id) AS networks
+    FROM content_id_whitelists
+  `).get();
+
+  res.json({ success: true, whitelists: rows, summary });
+}
+
+async function syncWhitelists(req, res) {
+  const networkId = Number(req.body?.network_id || req.query.network_id || 0);
+  const networks = networkId
+    ? db.prepare("SELECT id, name FROM networks WHERE id = ? AND cms_auth_status = 'connected'").all(networkId)
+    : db.prepare("SELECT id, name FROM networks WHERE cms_auth_status = 'connected' AND COALESCE(network_code, '') <> '' ORDER BY name COLLATE NOCASE ASC").all();
+
+  if (!networks.length) {
+    return res.status(400).json({ success: false, message: "No connected CMS network found. Please authorize CMS in Settings > Network first." });
+  }
+
+  let synced = 0;
+  let deletedStale = 0;
+  const errors = [];
+  const results = [];
+
+  for (const network of networks) {
+    try {
+      const cms = await listWhitelistsFromCms(network.id);
+      const channelIds = cms.items.map((item) => item.channel_id).filter(Boolean);
+      const { channels, errors: channelErrors } = await resolveWhitelistChannels(channelIds);
+      const channelMap = new Map(channels.map((channel) => [channel.channel_id, channel]));
+
+      const syncRows = db.transaction(() => {
+        cms.items.forEach((item) => {
+          const channel = channelMap.get(item.channel_id) || {};
+          upsertWhitelist(toWhitelistChannelRow(network.id, cms.contentOwnerId, item, channel));
+        });
+
+        if (channelIds.length) {
+          const placeholders = channelIds.map(() => "?").join(",");
+          const info = db.prepare(`
+            DELETE FROM content_id_whitelists
+            WHERE network_id = ? AND channel_id NOT IN (${placeholders})
+          `).run(network.id, ...channelIds);
+          deletedStale += info.changes || 0;
+        } else {
+          const info = db.prepare("DELETE FROM content_id_whitelists WHERE network_id = ?").run(network.id);
+          deletedStale += info.changes || 0;
+        }
+      });
+
+      syncRows();
+      synced += cms.items.length;
+      results.push({ network_id: network.id, network_name: network.name, synced: cms.items.length });
+      channelErrors.forEach((error) => pushUniqueError(errors, { network_id: network.id, ...error }));
+    } catch (error) {
+      errors.push({ network_id: network.id, network_name: network.name, message: error.message || "Could not sync whitelist" });
+    }
+  }
+
+  res.json({ success: errors.length === 0, synced, deleted_stale: deletedStale, results, errors });
+}
+
+async function syncWhitelistChannelInfo(req, res) {
+  const networkId = Number(req.body?.network_id || req.query.network_id || 0);
+  const params = [];
+  const where = networkId ? "WHERE network_id = ?" : "";
+  if (networkId) params.push(networkId);
+
+  const rows = db.prepare(`
+    SELECT id, network_id, content_owner_id, whitelist_id, channel_id
+    FROM content_id_whitelists
+    ${where}
+    ORDER BY id ASC
+  `).all(...params);
+
+  if (!rows.length) {
+    return res.json({ success: true, synced: 0, missing: 0, errors: [], message: "No whitelist channels to sync." });
+  }
+
+  const errors = [];
+  let synced = 0;
+  let missing = 0;
+
+  try {
+    const channelIds = [...new Set(rows.map((row) => row.channel_id).filter(Boolean))];
+    const channels = await getChannelsFromYoutube(channelIds, { includeLatest: false });
+    const channelMap = new Map(channels.map((channel) => [channel.channel_id, channel]));
+
+    const updateRows = db.transaction(() => {
+      rows.forEach((row) => {
+        const channel = channelMap.get(row.channel_id);
+        if (!channel) {
+          missing += 1;
+          return;
+        }
+
+        upsertWhitelist(toWhitelistChannelRow(row.network_id, row.content_owner_id, {
+          whitelist_id: row.whitelist_id,
+          channel_id: row.channel_id
+        }, channel));
+        synced += 1;
+      });
+    });
+
+    updateRows();
+  } catch (error) {
+    pushUniqueError(errors, {
+      input: "YouTube Data API",
+      code: isYoutubeQuotaError(error) ? "quotaExceeded" : "youtubeDataApiError",
+      message: error.message || "Could not sync channel info from YouTube Data API"
+    });
+  }
+
+  res.status(errors.length && !synced ? 400 : 200).json({
+    success: errors.length === 0,
+    synced,
+    missing,
+    errors,
+    message: `Synced channel info for ${synced} channel(s). ${missing} channel(s) not found.`
+  });
+}
+
+async function addWhitelistChannels(req, res) {
+  const networkId = Number(req.body?.network_id || 0);
+  const inputs = parseChannelInputs(req.body?.channels || req.body?.channel_ids || "");
+  if (!networkId) return res.status(400).json({ success: false, message: "CMS network is required" });
+  if (!inputs.length) return res.status(400).json({ success: false, message: "Paste at least one channel" });
+
+  const { channels, errors } = await resolveWhitelistChannels(inputs);
+  const added = [];
+  const skipped = [];
+
+  for (const channel of channels) {
+    try {
+      const exists = db.prepare("SELECT * FROM content_id_whitelists WHERE network_id = ? AND channel_id = ?").get(networkId, channel.channel_id);
+      if (exists?.whitelist_id) {
+        skipped.push({ channel_id: channel.channel_id, message: "Already exists in local whitelist" });
+        continue;
+      }
+      const cms = await insertWhitelistToCms(networkId, channel.channel_id);
+      upsertWhitelist(toWhitelistChannelRow(networkId, cms.contentOwnerId, cms.item, channel));
+      added.push({ channel_id: channel.channel_id, title: channel.title });
+    } catch (error) {
+      errors.push({ input: channel.channel_id, message: error.message || "Could not add channel to CMS whitelist" });
+    }
+  }
+
+  res.status(errors.length && !added.length ? 400 : 200).json({
+    success: errors.length === 0,
+    added,
+    skipped,
+    errors,
+    message: `Added ${added.length} channel(s), ${skipped.length} skipped, ${errors.length} error(s)`
+  });
+}
+
+async function deleteWhitelistChannels(req, res) {
+  const ids = (Array.isArray(req.body?.ids) ? req.body.ids : String(req.body?.ids || "").split(/[,\s]+/))
+    .map((id) => Number(id))
+    .filter(Boolean);
+  if (!ids.length) return res.status(400).json({ success: false, message: "Select at least one whitelist channel" });
+
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = db.prepare(`
+    SELECT * FROM content_id_whitelists
+    WHERE id IN (${placeholders})
+  `).all(...ids);
+
+  const deleted = [];
+  const errors = [];
+
+  for (const row of rows) {
+    try {
+      await deleteWhitelistFromCms(row.network_id, row.whitelist_id || row.channel_id);
+      db.prepare("DELETE FROM content_id_whitelists WHERE id = ?").run(row.id);
+      deleted.push(row.id);
+    } catch (error) {
+      const status = error.response?.status || error.status;
+      if (status === 404) {
+        db.prepare("DELETE FROM content_id_whitelists WHERE id = ?").run(row.id);
+        deleted.push(row.id);
+      } else {
+        errors.push({ id: row.id, channel_id: row.channel_id, message: error.message || "Could not remove channel from CMS whitelist" });
+      }
+    }
+  }
+
+  res.status(errors.length && !deleted.length ? 400 : 200).json({
+    success: errors.length === 0,
+    deleted,
+    errors,
+    message: `Removed ${deleted.length} channel(s), ${errors.length} error(s)`
+  });
+}
+
 function listClaims(req, res) {
   const networkId = Number(req.query.network_id || 0);
   const status = String(req.query.status || "").trim();
@@ -1116,6 +1495,7 @@ module.exports = {
   deleteArtist,
   deleteLabel,
   deleteProduct,
+  deleteWhitelistChannels,
   getAvailableCodes,
   getCodeSummary,
   getProduct,
@@ -1125,11 +1505,15 @@ module.exports = {
   listCmsNetworks,
   listLabels,
   listProducts,
+  listWhitelists,
   releaseClaims,
   saveProduct,
   searchClaims,
   syncLabelsFromCms,
+  syncWhitelistChannelInfo,
+  syncWhitelists,
   syncClaim,
+  addWhitelistChannels,
   updateArtist,
   updateLabel,
   updateCode,

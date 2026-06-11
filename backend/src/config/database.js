@@ -412,6 +412,25 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS content_id_whitelists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    network_id INTEGER NOT NULL,
+    content_owner_id TEXT,
+    whitelist_id TEXT,
+    channel_id TEXT NOT NULL,
+    channel_title TEXT,
+    custom_url TEXT,
+    thumbnail_url TEXT,
+    view_count INTEGER NOT NULL DEFAULT 0,
+    subscriber_count INTEGER NOT NULL DEFAULT 0,
+    video_count INTEGER NOT NULL DEFAULT 0,
+    synced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(network_id, channel_id),
+    FOREIGN KEY (network_id) REFERENCES networks(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS content_id_track_artists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     track_id INTEGER NOT NULL,

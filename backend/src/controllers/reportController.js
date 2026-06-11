@@ -1663,8 +1663,29 @@ const NETWORK_PUBLIC_FIELDS = `
   created_at, updated_at
 `;
 
-function redirectCmsAuth(status, params = {}) {
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+function getCmsAuthFrontendUrl(req) {
+  const configuredUrl = String(process.env.FRONTEND_URL || "").trim();
+  const isLocalConfigured =
+    !configuredUrl ||
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(configuredUrl);
+
+  if (!isLocalConfigured) {
+    return configuredUrl.replace(/\/+$/, "");
+  }
+
+  const host = req.get("x-forwarded-host") || req.get("host");
+  const proto = req.get("x-forwarded-proto") || req.protocol || "http";
+  const isLocalHost = /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(String(host || ""));
+
+  if (host && !isLocalHost) {
+    return `${proto}://${host}`.replace(/\/+$/, "");
+  }
+
+  return configuredUrl || "http://localhost:5173";
+}
+
+function redirectCmsAuth(req, status, params = {}) {
+  const frontendUrl = getCmsAuthFrontendUrl(req);
   const url = new URL("/networks", frontendUrl);
   url.searchParams.set("cms_auth", status);
   Object.entries(params).forEach(([key, value]) => {
@@ -1773,7 +1794,7 @@ exports.handleNetworkCmsAuthCallback = async (req, res) => {
         SET cms_auth_status = 'error', cms_auth_error = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(String(req.query.error), networkId);
-      return res.redirect(redirectCmsAuth("error", { network_id: networkId, message: req.query.error }));
+      return res.redirect(redirectCmsAuth(req, "error", { network_id: networkId, message: req.query.error }));
     }
 
     const code = String(req.query.code || "");
@@ -1809,7 +1830,7 @@ exports.handleNetworkCmsAuthCallback = async (req, res) => {
       networkId
     );
 
-    return res.redirect(redirectCmsAuth("success", { network_id: networkId }));
+    return res.redirect(redirectCmsAuth(req, "success", { network_id: networkId }));
   } catch (error) {
     if (networkId) {
       db.prepare(`
@@ -1818,7 +1839,7 @@ exports.handleNetworkCmsAuthCallback = async (req, res) => {
         WHERE id = ?
       `).run(error.message, networkId);
     }
-    return res.redirect(redirectCmsAuth("error", { network_id: networkId, message: error.message }));
+    return res.redirect(redirectCmsAuth(req, "error", { network_id: networkId, message: error.message }));
   }
 };
 
