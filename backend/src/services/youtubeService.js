@@ -234,7 +234,7 @@ async function getChannelFromYoutube(input, options = {}) {
   const value = extractChannelInput(input);
 
   let params = {
-    part: "snippet,statistics,contentDetails",
+    part: includeLatest ? "snippet,statistics,contentDetails" : "snippet,statistics",
     key: apiKey
   };
 
@@ -298,7 +298,7 @@ async function getChannelsFromYoutube(inputs, options = {}) {
     const batch = ids.slice(index, index + 50);
     const response = await youtubeGet(YOUTUBE_API, {
       params: {
-        part: "snippet,statistics,contentDetails",
+        part: includeLatest ? "snippet,statistics,contentDetails" : "snippet,statistics",
         id: batch.join(","),
         key: apiKey
       },

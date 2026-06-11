@@ -786,6 +786,39 @@ function pushUniqueError(errors, error) {
   }
 }
 
+function chunkList(values, size = 50) {
+  const chunks = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
+
+async function getYoutubeChannelsForWhitelist(channelIds, errors = []) {
+  const uniqueIds = [...new Set((channelIds || []).filter(Boolean))];
+  const channels = [];
+
+  for (const [index, batch] of chunkList(uniqueIds, 50).entries()) {
+    try {
+      const result = await getChannelsFromYoutube(batch, { includeLatest: false });
+      channels.push(...result);
+    } catch (error) {
+      const quotaError = isYoutubeQuotaError(error);
+      pushUniqueError(errors, {
+        input: `YouTube Data API batch ${index + 1}`,
+        code: quotaError ? "quotaExceeded" : "youtubeDataApiError",
+        message: quotaError
+          ? (error.message || "YouTube API quota exceeded. Whitelist was synced, but channel stats could not be refreshed.")
+          : (error.message || `Could not fetch channel info for ${batch.length} channel(s).`)
+      });
+
+      if (quotaError) break;
+    }
+  }
+
+  return channels;
+}
+
 async function resolveWhitelistChannels(inputs) {
   const parsed = parseChannelInputs(inputs);
   const idInputs = parsed.filter((input) => /^UC[A-Za-z0-9_-]{20,}$/.test(input));
@@ -794,23 +827,14 @@ async function resolveWhitelistChannels(inputs) {
   const errors = [];
 
   if (idInputs.length) {
-    try {
-      const batch = await getChannelsFromYoutube(idInputs, { includeLatest: false });
-      batch.forEach((channel) => channels.set(channel.channel_id, channel));
+    const batch = await getYoutubeChannelsForWhitelist(idInputs, errors);
+    batch.forEach((channel) => channels.set(channel.channel_id, channel));
+    const batchFailed = errors.some((error) => error.code === "quotaExceeded" || error.code === "youtubeDataApiError");
+    if (!batchFailed) {
       const foundIds = new Set(batch.map((channel) => channel.channel_id));
       idInputs.forEach((input) => {
         if (!foundIds.has(input)) errors.push({ input, message: "Channel not found on YouTube Data API" });
       });
-    } catch (error) {
-      if (isYoutubeQuotaError(error)) {
-        errors.push({
-          input: "YouTube Data API",
-          code: "quotaExceeded",
-          message: error.message || "YouTube API quota exceeded. Whitelist was synced, but channel stats could not be refreshed."
-        });
-      } else {
-        idInputs.forEach((input) => errors.push({ input, message: error.message || "Could not fetch channel from YouTube Data API" }));
-      }
     }
   }
 
@@ -890,7 +914,8 @@ async function syncWhitelists(req, res) {
     try {
       const cms = await listWhitelistsFromCms(network.id);
       const channelIds = cms.items.map((item) => item.channel_id).filter(Boolean);
-      const { channels, errors: channelErrors } = await resolveWhitelistChannels(channelIds);
+      const channelErrors = [];
+      const channels = await getYoutubeChannelsForWhitelist(channelIds, channelErrors);
       const channelMap = new Map(channels.map((channel) => [channel.channel_id, channel]));
 
       const syncRows = db.transaction(() => {
@@ -947,7 +972,7 @@ async function syncWhitelistChannelInfo(req, res) {
 
   try {
     const channelIds = [...new Set(rows.map((row) => row.channel_id).filter(Boolean))];
-    const channels = await getChannelsFromYoutube(channelIds, { includeLatest: false });
+    const channels = await getYoutubeChannelsForWhitelist(channelIds, errors);
     const channelMap = new Map(channels.map((channel) => [channel.channel_id, channel]));
 
     const updateRows = db.transaction(() => {

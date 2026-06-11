@@ -5,7 +5,7 @@ const db = require("../config/database");
 const { parseRoles } = require("../middlewares/authMiddleware");
 const { sendVerificationEmail, sendPasswordResetEmail } = require("../services/mailService");
 
-const ROLE_OPTIONS = ["admin", "Account", "Report Manager", "Channel Management", "Content ID", "Expense", "Partner", "Claim Manager", "Read Only", "user"];
+const ROLE_OPTIONS = ["admin", "Account", "Account Claim Manager", "Report Manager", "Channel Management", "Content ID", "Expense", "Partner", "Claim Manager", "Read Only", "user"];
 const ROLE_LOOKUP = new Map(ROLE_OPTIONS.map((role) => [role.toLowerCase(), role]));
 ROLE_LOOKUP.set("readonly", "Read Only");
 ROLE_LOOKUP.set("read online", "Read Only");
@@ -47,6 +47,14 @@ function userHasAnyRole(user, roles) {
   const userRoles = parseRoles(user?.roles?.length ? user.roles : user?.role).map((role) => String(role).toLowerCase());
   const wanted = roles.map((role) => String(role).toLowerCase());
   return userRoles.some((role) => wanted.includes(role));
+}
+
+function isAccountClaimManagerActor(user) {
+  return (
+    !isAdminActor(user) &&
+    !userHasAnyRole(user, ["Account"]) &&
+    userHasAnyRole(user, ["Account Claim Manager"])
+  );
 }
 
 function isEmail(value = "") {
@@ -923,6 +931,7 @@ exports.updateUserRole = (req, res) => {
     const requestedRoles = Array.isArray(req.body?.roles) ? req.body.roles : [req.body?.role];
     const roles = normalizeRoleList(requestedRoles);
     const actorIsAdmin = isAdminActor(req.user);
+    const actorIsAccountClaimManager = isAccountClaimManagerActor(req.user);
 
     if (!roles.length || roles.some((role) => !ROLE_OPTIONS.includes(role))) {
       return res.status(400).json({
@@ -956,17 +965,36 @@ exports.updateUserRole = (req, res) => {
       });
     }
 
+    let finalRoles = roles;
+    if (actorIsAccountClaimManager) {
+      const allowedRequestedRoles = new Set(["Claim Manager", "user"]);
+      if (roles.some((role) => !allowedRequestedRoles.has(role))) {
+        return res.status(403).json({
+          success: false,
+          message: "Account Claim Manager can only assign Claim Manager role"
+        });
+      }
+
+      const currentRoles = normalizeRoleList(user.role);
+      const preservedRoles = currentRoles.filter((role) => role !== "Claim Manager" && role !== "user");
+      finalRoles = roles.includes("Claim Manager")
+        ? [...new Set([...preservedRoles, "Claim Manager"])]
+        : preservedRoles.length
+          ? preservedRoles
+          : ["user"];
+    }
+
     db.prepare(`
       UPDATE users
       SET role = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(serializeRoles(roles), id);
+    `).run(serializeRoles(finalRoles), id);
 
-    if (!roles.includes("Partner")) {
+    if (!finalRoles.includes("Partner")) {
       db.prepare("DELETE FROM user_group_permissions WHERE user_id = ?").run(id);
     }
 
-    if (!roles.includes("Claim Manager")) {
+    if (!finalRoles.includes("Claim Manager")) {
       db.prepare("DELETE FROM user_content_id_labels WHERE user_id = ?").run(id);
     }
 
@@ -1098,6 +1126,10 @@ exports.updateUserContentIdLabels = (req, res) => {
 
     if (!isAdminActor(req.user) && isAdminUser(user)) {
       return res.status(403).json({ success: false, message: "Account role cannot update admin users" });
+    }
+
+    if (isAccountClaimManagerActor(req.user) && !userHasRole(user, "Claim Manager")) {
+      return res.status(400).json({ success: false, message: "Assign Claim Manager role before adding claim labels" });
     }
 
     if (!userHasRole(user, "Claim Manager")) {

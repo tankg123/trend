@@ -25,14 +25,14 @@ router.post("/2fa/disable", authMiddleware, authController.disableTwoFactor);
 router.get(
   "/users",
   authMiddleware,
-  allowRoles("admin", "Account"),
+  allowRoles("admin", "Account", "Account Claim Manager"),
   authController.getAllUsers
 );
 
 router.put(
   "/users/:id/role",
   authMiddleware,
-  allowRoles("admin", "Account"),
+  allowRoles("admin", "Account", "Account Claim Manager"),
   authController.updateUserRole
 );
 
@@ -60,7 +60,7 @@ router.put(
 router.put(
   "/users/:id/content-id-labels",
   authMiddleware,
-  allowRoles("admin", "Account"),
+  allowRoles("admin", "Account", "Account Claim Manager"),
   authController.updateUserContentIdLabels
 );
 
