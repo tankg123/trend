@@ -20,7 +20,20 @@ import {
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 
-const ROLE_OPTIONS = ["admin", "Account", "Report Manager", "Channel Management", "Content ID", "Expense", "Partner", "Claim Manager", "Read Only", "user"];
+const ROLE_OPTIONS = [
+  "admin",
+  "Account",
+  "Account Claim Manager",
+  "Report Manager",
+  "Channel Management",
+  "Content ID",
+  "Expense",
+  "Partner",
+  "Claim Manager",
+  "Read Only",
+  "user"
+];
+const ACCOUNT_CLAIM_MANAGER_ROLE_OPTIONS = ["Claim Manager"];
 
 function roleList(item) {
   if (Array.isArray(item?.roles)) return item.roles.filter(Boolean);
@@ -121,7 +134,7 @@ function SearchableAddSelect({
 }
 
 export default function AccountPage() {
-  const { user, logout, isAdmin, canViewAccount } = useAuth();
+  const { user, logout, isAdmin, isAccountClaimManagerRole, canViewAccount } = useAuth();
 
   const [users, setUsers] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -237,6 +250,24 @@ export default function AccountPage() {
       .map((group) => Number(group.id))
       .filter((id) => id !== Number(groupId));
     updatePartnerGroups(item.id, nextIds);
+  }
+
+  function assignableRoleOptions(item) {
+    const source = isAccountClaimManagerRole && !isAdmin
+      ? ACCOUNT_CLAIM_MANAGER_ROLE_OPTIONS
+      : ROLE_OPTIONS;
+
+    return source.filter((role) => (isAdmin || role !== "admin") && !roleList(item).includes(role));
+  }
+
+  function canManagePartnerGroups() {
+    return isAdmin || !isAccountClaimManagerRole;
+  }
+
+  function canRemoveRole(role) {
+    if (role === "admin") return false;
+    if (isAccountClaimManagerRole && !isAdmin) return role === "Claim Manager";
+    return true;
   }
 
   async function updateClaimLabels(id, labelIds) {
@@ -460,7 +491,7 @@ export default function AccountPage() {
                         {roleList(item).map((role) => (
                           <span key={role} className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">
                             {role}
-                            {item.id !== user.id && role !== "admin" && (
+                            {item.id !== user.id && canRemoveRole(role) && (
                               <button type="button" onClick={() => removeRole(item, role)} className="text-blue-400 hover:text-red-500">
                                 <X size={13} />
                               </button>
@@ -476,7 +507,7 @@ export default function AccountPage() {
                             className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold"
                           >
                             <option value="">Add role</option>
-                            {ROLE_OPTIONS.filter((role) => (isAdmin || role !== "admin") && !roleList(item).includes(role)).map((role) => (
+                            {assignableRoleOptions(item).map((role) => (
                               <option key={role} value={role}>{role}</option>
                             ))}
                           </select>
@@ -511,33 +542,37 @@ export default function AccountPage() {
                             {(item.assigned_groups || []).map((group) => (
                               <span key={group.id} className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
                                 {group.group_name} - {group.partner_name}
-                                <button type="button" onClick={() => removePartnerGroup(item, group.id)} className="text-emerald-500 hover:text-red-500">
-                                  <X size={13} />
-                                </button>
+                                {canManagePartnerGroups() && (
+                                  <button type="button" onClick={() => removePartnerGroup(item, group.id)} className="text-emerald-500 hover:text-red-500">
+                                    <X size={13} />
+                                  </button>
+                                )}
                               </span>
                             ))}
                             {!(item.assigned_groups || []).length && <span className="text-xs text-slate-400">No groups assigned</span>}
                           </div>
-                          <div className="flex gap-2">
-                            <SearchableAddSelect
-                              value={pendingGroup[item.id] || ""}
-                              onChange={(nextValue) => setPendingGroup((current) => ({ ...current, [item.id]: nextValue }))}
-                              placeholder="Add partner group"
-                              searchPlaceholder="Search partner group..."
-                              options={groups
-                                .filter((group) => !(item.assigned_groups || []).some((assigned) => Number(assigned.id) === Number(group.id)))
-                                .sort((a, b) => `${a.group_name || ""} ${a.partner_name || ""}`.localeCompare(`${b.group_name || ""} ${b.partner_name || ""}`, undefined, { sensitivity: "base" }))}
-                              getValue={(group) => group.id}
-                              getLabel={(group) => `${group.group_name} - ${group.partner_name}`}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => addPartnerGroup(item)}
-                              className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white"
-                            >
-                              <Plus size={16} />
-                            </button>
-                          </div>
+                          {canManagePartnerGroups() && (
+                            <div className="flex gap-2">
+                              <SearchableAddSelect
+                                value={pendingGroup[item.id] || ""}
+                                onChange={(nextValue) => setPendingGroup((current) => ({ ...current, [item.id]: nextValue }))}
+                                placeholder="Add partner group"
+                                searchPlaceholder="Search partner group..."
+                                options={groups
+                                  .filter((group) => !(item.assigned_groups || []).some((assigned) => Number(assigned.id) === Number(group.id)))
+                                  .sort((a, b) => `${a.group_name || ""} ${a.partner_name || ""}`.localeCompare(`${b.group_name || ""} ${b.partner_name || ""}`, undefined, { sensitivity: "base" }))}
+                                getValue={(group) => group.id}
+                                getLabel={(group) => `${group.group_name} - ${group.partner_name}`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => addPartnerGroup(item)}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white"
+                              >
+                                <Plus size={16} />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <span className="text-slate-400">-</span>
