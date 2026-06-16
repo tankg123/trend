@@ -214,13 +214,16 @@ export default function ChannelManagementPage() {
   }
 
   async function syncManagedChannels() {
-    if (!window.confirm("Sync status, subscribers, views, and video count for all Channel Management channels?")) return;
+    if (!window.confirm("Sync channel name, avatar, subscribers, views, and video count for all Channel Management channels?")) return;
 
     try {
       setSyncing(true);
       const res = await api.post("/channels/management/sync-basic");
       const firstError = res.data.errors?.[0]?.error;
-      setMessage(`${res.data.message || "Sync completed"}${res.data.errors?.length ? `, ${res.data.errors.length} errors${firstError ? `: ${firstError}` : ""}` : ""}`);
+      const quotaInfo = res.data.quota?.requests_made
+        ? ` (${res.data.quota.requests_made} YouTube requests, ${res.data.quota.batch_size || 50} channels/request)`
+        : "";
+      setMessage(`${res.data.message || "Channel info sync completed"}${quotaInfo}${res.data.errors?.length ? `, ${res.data.errors.length} errors${firstError ? `: ${firstError}` : ""}` : ""}`);
       await fetchData();
     } catch (error) {
       setMessage(error.response?.data?.message || error.response?.data?.error || "Could not sync managed channels");
@@ -575,7 +578,7 @@ export default function ChannelManagementPage() {
                 className="px-4 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 font-bold text-sm flex items-center gap-2 disabled:opacity-60"
               >
                 {syncing ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}
-                Sync
+                Sync Channel Info
               </button>
               <button
                 type="button"

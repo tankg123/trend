@@ -188,7 +188,7 @@ export function AuthProvider({ children }) {
       const canViewContentIdSettings = isAdmin || isContentIdRole;
       const canViewContentIdFull = isAdmin || isContentIdRole;
       const canViewContentIdClaim = canViewContentIdFull || isClaimManagerRole;
-      const canViewPartnerDashboard = isPartnerRole && !isAdmin && !isReportManager;
+      const canViewPartnerDashboard = isPartnerRole && !isAdmin;
 
       return (
     <AuthContext.Provider
