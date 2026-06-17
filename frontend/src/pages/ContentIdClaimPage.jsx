@@ -88,7 +88,14 @@ export default function ContentIdClaimPage() {
     for (const video of result?.videos || []) {
       for (const claim of video.claims || []) {
         const key = `${claim.accountId}:${claim.id}`;
-        if (selectedClaims[key]) claims.push({ accountId: claim.accountId, claimId: claim.id });
+        if (selectedClaims[key]) {
+          claims.push({
+            accountId: claim.accountId,
+            claimId: claim.id,
+            videoId: claim.videoId || video.videoId,
+            assetId: claim.assetId || claim.asset?.id || null
+          });
+        }
       }
     }
     return claims;
@@ -137,6 +144,36 @@ export default function ContentIdClaimPage() {
     }
   }
 
+  function applyReleaseResults(releaseResults = []) {
+    if (!releaseResults.length) return;
+    const releaseByKey = new Map(releaseResults.map((item) => [`${item.accountId}:${item.claimId}`, item]));
+
+    setResult((current) => {
+      if (!current?.videos) return current;
+      return {
+        ...current,
+        videos: current.videos.map((video) => {
+          const claims = (video.claims || []).map((claim) => {
+            const release = releaseByKey.get(`${claim.accountId}:${claim.id}`);
+            if (!release?.ok) return claim;
+            const releasedClaim = release.claim || {};
+            return {
+              ...claim,
+              ...releasedClaim,
+              id: claim.id,
+              accountId: claim.accountId,
+              videoId: claim.videoId || video.videoId,
+              asset: releasedClaim.asset || claim.asset,
+              status: releasedClaim.status || "inactive",
+              canRelease: false
+            };
+          });
+          return { ...video, claims, claimCount: claims.length };
+        })
+      };
+    });
+  }
+
   async function handleRelease() {
     if (!selectedReleases.length) return;
     if (!window.confirm(`Release ${selectedReleases.length} selected claim(s)?`)) return;
@@ -145,19 +182,16 @@ export default function ContentIdClaimPage() {
     setError("");
     setMessage("");
 
-    let releaseMessage = "";
-    let releaseError = "";
     try {
       const data = await releaseContentIdClaims(selectedReleases);
-      releaseMessage = `Released ${data.successCount} claim(s), ${data.failedCount} failed.`;
+      applyReleaseResults(data.results || []);
+      setSelectedClaims({});
+      setMessage(`Released ${data.successCount} claim(s), ${data.failedCount} failed. Status verified with claims.list.`);
     } catch (err) {
-      releaseError = err.response?.data?.message || err.message;
+      setError(err.response?.data?.message || err.message);
+    } finally {
+      setReleasing(false);
     }
-
-    await handleSearch({ preventDefault() {} }).catch(() => {});
-    if (releaseMessage) setMessage(`${releaseMessage} Claim status refreshed.`);
-    if (releaseError) setError(`${releaseError}. Claim status refreshed.`);
-    setReleasing(false);
   }
 
   return (

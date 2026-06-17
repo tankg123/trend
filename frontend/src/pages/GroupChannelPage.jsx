@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { ArrowUpDown, Calendar, Check, ChevronDown, Copy, Download, Edit3, Loader2, MoreHorizontal, Plus, RefreshCw, Search, Trash2, Users, X } from "lucide-react";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
+import { useSystemSettings } from "../context/SystemSettingsContext";
 
 const emptyGroup = {
   partner_id: "",
@@ -113,6 +114,32 @@ function plainNumber(value, digits = 2) {
 
 function sanitizeFileName(value) {
   return String(value || "export").replace(/[\\/:*?"<>|]+/g, "-").trim();
+}
+
+function exportMonthFilePart(month = "") {
+  const match = String(month || "").match(/^(\d{4})-(\d{2})$/);
+  if (match) return `${match[2]}-${match[1]}`;
+  return String(month || "month").trim() || "month";
+}
+
+function groupExportFileName(group, month, brandName, extension) {
+  return [
+    exportMonthFilePart(month || group?.month),
+    group?.group_name || "group",
+    brandName || "ANS Network"
+  ].map(sanitizeFileName).filter(Boolean).join("-") + `.${extension}`;
+}
+
+function filenameFromDisposition(disposition = "") {
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return encoded;
+    }
+  }
+  return disposition.match(/filename="?([^";]+)"?/i)?.[1] || "";
 }
 
 function escapeHtml(value) {
@@ -738,6 +765,7 @@ function GroupForm({ partners, value, onChange }) {
 
 export default function GroupChannelPage() {
   const { canViewReports } = useAuth();
+  const { settings } = useSystemSettings();
   const [searchParams, setSearchParams] = useSearchParams();
   const [month, setMonth] = useState(currentMonth());
   const [partners, setPartners] = useState([]);
@@ -1044,7 +1072,7 @@ export default function GroupChannelPage() {
 
         downloadResponseBlob(
           bytes,
-          res.data.fileName || `${detail.group_name || "group"}-${month}.pdf`,
+          res.data.fileName || groupExportFileName(detail, month, settings?.brand_name, "pdf"),
           res.data.mimeType || "application/pdf"
         );
         setExportModalOpen(false);
@@ -1071,7 +1099,8 @@ export default function GroupChannelPage() {
       const mime = format === "pdf"
         ? "application/pdf"
         : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-      downloadResponseBlob(res.data, `${detail.group_name || "group"}-${month}.${extension}`, mime);
+      const headerFileName = filenameFromDisposition(res.headers?.["content-disposition"] || "");
+      downloadResponseBlob(res.data, headerFileName || groupExportFileName(detail, month, settings?.brand_name, extension), mime);
       setExportModalOpen(false);
     } catch (error) {
       if (error.response?.data instanceof Blob) {

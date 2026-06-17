@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowUpDown,
   CalendarDays,
+  Check,
+  Copy,
   DollarSign,
   Eye,
+  ExternalLink,
   ListChecks,
   Loader2,
   Network,
@@ -11,6 +15,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Trash2,
   Users,
   Video,
   X
@@ -18,7 +23,6 @@ import {
 
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
-import ChannelCard from "../components/ChannelCard";
 import PaginationFooter from "../components/PaginationFooter";
 
 function formatNumber(value) {
@@ -60,8 +64,7 @@ export default function ChannelPage() {
   const [channelInput, setChannelInput] = useState("");
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [syncingAll, setSyncingAll] = useState(false);
-  const [syncingBasic, setSyncingBasic] = useState(false);
+  const [syncingInfo, setSyncingInfo] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [networks, setNetworks] = useState([]);
@@ -71,6 +74,8 @@ export default function ChannelPage() {
   const [detailMonth, setDetailMonth] = useState(currentMonth());
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [sortConfig, setSortConfig] = useState(null);
+  const [copiedChannelId, setCopiedChannelId] = useState("");
   const [networkForm, setNetworkForm] = useState({
     network_id: "",
     start_month: currentMonth(),
@@ -230,45 +235,24 @@ export default function ChannelPage() {
     }
   }
 
-  async function handleSyncAllChannels() {
+  async function handleSyncChannelInfo() {
     if (!canRefreshChannel) {
       setMessage("Bạn không có quyền sync channel");
       return;
     }
 
     try {
-      setSyncingAll(true);
-      setMessage("Đang sync toàn bộ channel từ YouTube...");
-      const res = await api.post("/channels/sync-all", {}, { timeout: 300000 });
-      const errors = res.data.errors?.length || 0;
-      setMessage(`${res.data.message || "Đã sync toàn bộ channel"}: ${res.data.synced || 0}/${res.data.total || 0} channel${errors ? `, ${errors} lỗi` : ""}`);
-      await fetchChannels(keyword);
-      await fetchStats();
-    } catch (error) {
-      setMessage(error.response?.data?.message || error.response?.data?.error || "Lỗi sync toàn bộ channel");
-    } finally {
-      setSyncingAll(false);
-    }
-  }
-
-  async function handleSyncBasicChannels() {
-    if (!canRefreshChannel) {
-      setMessage("Báº¡n khÃ´ng cÃ³ quyá»n sync channel");
-      return;
-    }
-
-    try {
-      setSyncingBasic(true);
-      setMessage("Syncing channel stats without latest videos...");
+      setSyncingInfo(true);
+      setMessage("Syncing channel info in 50-channel batches...");
       const res = await api.post("/channels/sync-basic", {}, { timeout: 300000 });
       const errors = res.data.errors?.length || 0;
-      setMessage(`${res.data.message || "Synced channel stats"}: ${res.data.synced || 0}/${res.data.total || 0} channel${res.data.batches ? `, ${res.data.batches} batches` : ""}${errors ? `, ${errors} errors` : ""}`);
+      setMessage(`${res.data.message || "Synced channel info"}: ${res.data.synced || 0}/${res.data.total || 0} channels${res.data.batches ? `, ${res.data.batches} batches` : ""}${errors ? `, ${errors} errors` : ""}`);
       await fetchChannels(keyword);
       await fetchStats();
     } catch (error) {
-      setMessage(error.response?.data?.message || error.response?.data?.error || "Could not sync channel stats");
+      setMessage(error.response?.data?.message || error.response?.data?.error || "Could not sync channel info");
     } finally {
-      setSyncingBasic(false);
+      setSyncingInfo(false);
     }
   }
 
@@ -326,10 +310,47 @@ export default function ChannelPage() {
       text: "text-white"
     }
   ];
+
+  function toggleSort(key) {
+    setSortConfig((current) => ({
+      key,
+      direction: current?.key === key && current.direction === "asc" ? "desc" : "asc"
+    }));
+    setPage(1);
+  }
+
+  async function handleCopyChannelId(channelId) {
+    if (!channelId) return;
+
+    try {
+      await navigator.clipboard.writeText(channelId);
+      setCopiedChannelId(channelId);
+      setTimeout(() => setCopiedChannelId(""), 2500);
+    } catch {
+      setMessage("Could not copy channel ID");
+    }
+  }
+
+  const sortedChannels = useMemo(() => {
+    if (!sortConfig) return channels;
+
+    const direction = sortConfig.direction === "asc" ? 1 : -1;
+
+    return [...channels].sort((a, b) => {
+      if (sortConfig.key === "total_revenue") {
+        return (Number(a.total_revenue || 0) - Number(b.total_revenue || 0)) * direction;
+      }
+
+      return String(a.title || a.channel_id || "").localeCompare(String(b.title || b.channel_id || ""), "en", {
+        sensitivity: "base"
+      }) * direction;
+    });
+  }, [channels, sortConfig]);
+
   const paginatedChannels = useMemo(() => {
     const start = (page - 1) * pageSize;
-    return channels.slice(start, start + pageSize);
-  }, [channels, page, pageSize]);
+    return sortedChannels.slice(start, start + pageSize);
+  }, [sortedChannels, page, pageSize]);
 
   return (
     <div className="p-5 lg:p-8">
@@ -362,21 +383,12 @@ export default function ChannelPage() {
             <div className="flex flex-wrap justify-end gap-2">
               <button
                 type="button"
-                onClick={handleSyncBasicChannels}
-                disabled={syncingBasic || syncingAll}
-                className="bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-60 text-slate-800 rounded-2xl px-5 py-3 font-bold flex items-center justify-center gap-2"
-              >
-                {syncingBasic ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
-                Sync stats only
-              </button>
-              <button
-                type="button"
-                onClick={handleSyncAllChannels}
-                disabled={syncingAll || syncingBasic}
+                onClick={handleSyncChannelInfo}
+                disabled={syncingInfo}
                 className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-2xl px-5 py-3 font-bold flex items-center justify-center gap-2"
               >
-                {syncingAll ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
-                Sync all + latest videos
+                {syncingInfo ? <Loader2 className="animate-spin" size={18} /> : <RefreshCw size={18} />}
+                Sync channel info
               </button>
             </div>
 
@@ -457,19 +469,140 @@ export default function ChannelPage() {
           <p className="text-slate-500 mt-2">Hãy nhập Channel ID, YouTube URL hoặc @handle để thêm channel đầu tiên.</p>
         </div>
       ) : (
-        <div className="space-y-5">
-          {paginatedChannels.map((channel) => (
-            <ChannelCard
-              key={channel.id}
-              channel={channel}
-              onDelete={handleDelete}
-              onRefresh={handleRefresh}
-              onOpenDetail={openChannelDetail}
-              canRefresh={canRefreshChannel}
-              canDelete={canDeleteChannel}
-            />
-          ))}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 uppercase text-xs tracking-wide">
+                <tr>
+                  <th className="px-5 py-4 text-left">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("title")}
+                      className="inline-flex items-center gap-2 font-black hover:text-blue-600"
+                    >
+                      Channel
+                      <ArrowUpDown size={14} />
+                      {sortConfig?.key === "title" ? (
+                        <span className="normal-case text-blue-600">{sortConfig.direction === "asc" ? "A-Z" : "Z-A"}</span>
+                      ) : null}
+                    </button>
+                  </th>
+                  <th className="px-5 py-4 text-left">Network</th>
+                  <th className="px-5 py-4 text-right">Views</th>
+                  <th className="px-5 py-4 text-right">Subscribers</th>
+                  <th className="px-5 py-4 text-right">Videos</th>
+                  <th className="px-5 py-4 text-right">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("total_revenue")}
+                      className="inline-flex items-center justify-end gap-2 font-black hover:text-blue-600"
+                    >
+                      Total Revenue
+                      <ArrowUpDown size={14} />
+                      {sortConfig?.key === "total_revenue" ? (
+                        <span className="normal-case text-blue-600">{sortConfig.direction === "asc" ? "Low" : "High"}</span>
+                      ) : null}
+                    </button>
+                  </th>
+                  <th className="px-5 py-4 text-left">Updated</th>
+                  <th className="px-5 py-4 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {paginatedChannels.map((channel) => {
+                  const channelUrl = `https://www.youtube.com/channel/${channel.channel_id}`;
+                  const isError = channel.status === "error";
+
+                  return (
+                    <tr key={channel.id} className={isError ? "bg-red-50/70" : "hover:bg-slate-50/70"}>
+                      <td className="px-5 py-4 min-w-[360px]">
+                        <div className="flex items-center gap-4">
+                          <a href={channelUrl} target="_blank" rel="noreferrer" title="Open channel">
+                            <img
+                              src={channel.thumbnail || "https://placehold.co/80x80?text=YT"}
+                              alt={channel.title || channel.channel_id}
+                              className={`w-14 h-14 rounded-2xl object-cover border ${isError ? "border-red-200" : "border-slate-200"} bg-slate-100`}
+                            />
+                          </a>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openChannelDetail(channel)}
+                                className="text-left font-black text-slate-900 hover:text-blue-600 truncate max-w-[260px]"
+                              >
+                                {channel.title || "Channel error / die"}
+                              </button>
+                              <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase ${isError ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-700"}`}>
+                                {channel.status || "active"}
+                              </span>
+                              <a href={channelUrl} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-blue-600">
+                                <ExternalLink size={14} />
+                              </a>
+                            </div>
+                            <div className="mt-1 flex items-center gap-2 text-xs font-mono text-emerald-700">
+                              <span className="truncate max-w-[260px]">{channel.channel_id}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyChannelId(channel.channel_id)}
+                                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-blue-50 text-slate-500 hover:text-blue-600 flex items-center justify-center"
+                                title="Copy channel ID"
+                              >
+                                {copiedChannelId === channel.channel_id ? <Check size={14} /> : <Copy size={14} />}
+                              </button>
+                            </div>
+                            {channel.status_error ? (
+                              <p className="mt-1 text-xs text-red-500 line-clamp-1">{channel.status_error}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-slate-700 font-semibold min-w-[180px]">
+                        {channel.current_network?.name || "-"}
+                      </td>
+                      <td className="px-5 py-4 text-right font-bold">{formatNumber(channel.view_count)}</td>
+                      <td className="px-5 py-4 text-right font-bold">{formatNumber(channel.subscriber_count)}</td>
+                      <td className="px-5 py-4 text-right font-bold">{formatNumber(channel.video_count)}</td>
+                      <td className="px-5 py-4 text-right font-black text-slate-900">{money(channel.total_revenue)}</td>
+                      <td className="px-5 py-4 text-slate-500 whitespace-nowrap">{formatDate(channel.updated_at)}</td>
+                      <td className="px-5 py-4">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openChannelDetail(channel)}
+                            className="w-10 h-10 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 inline-flex items-center justify-center"
+                            title="Detail"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          {canRefreshChannel ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRefresh(channel.id)}
+                              className="w-10 h-10 rounded-xl border border-slate-200 hover:bg-blue-50 text-blue-600 inline-flex items-center justify-center"
+                              title="Refresh this channel"
+                            >
+                              <RefreshCw size={16} />
+                            </button>
+                          ) : null}
+                          {canDeleteChannel ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(channel.id)}
+                              className="w-10 h-10 rounded-xl bg-red-50 hover:bg-red-100 text-red-500 inline-flex items-center justify-center"
+                              title="Delete"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
             <PaginationFooter
               total={channels.length}
               page={page}
@@ -477,7 +610,6 @@ export default function ChannelPage() {
               onPageChange={setPage}
               onPageSizeChange={setPageSize}
             />
-          </div>
         </div>
       )}
 
