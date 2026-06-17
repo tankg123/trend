@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Download, FileSpreadsheet, Loader2, Search } from "lucide-react";
 import api from "../api/api";
+import { useSystemSettings } from "../context/SystemSettingsContext";
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
@@ -25,8 +26,34 @@ function money(value, currency = "USD") {
   }).format(Number(value || 0));
 }
 
-function safeName(value) {
-  return String(value || "group").replace(/[\\/:*?"<>|]+/g, "-").trim();
+function sanitizeFileName(value) {
+  return String(value || "export").replace(/[\\/:*?"<>|]+/g, "-").trim();
+}
+
+function exportMonthFilePart(month = "") {
+  const match = String(month || "").match(/^(\d{4})-(\d{2})$/);
+  if (match) return `${match[2]}-${match[1]}`;
+  return String(month || "month").trim() || "month";
+}
+
+function groupExportFileName(group, month, brandName, extension) {
+  return [
+    exportMonthFilePart(month || group?.month),
+    group?.group_name || "group",
+    brandName || "ANS Network"
+  ].map(sanitizeFileName).filter(Boolean).join("-") + `.${extension}`;
+}
+
+function filenameFromDisposition(disposition = "") {
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return encoded;
+    }
+  }
+  return disposition.match(/filename="?([^";]+)"?/i)?.[1] || "";
 }
 
 function sleep(ms) {
@@ -34,6 +61,7 @@ function sleep(ms) {
 }
 
 export default function ExportMultiPage() {
+  const { settings } = useSystemSettings();
   const [month, setMonth] = useState(currentMonth());
   const [groups, setGroups] = useState([]);
   const [companies, setCompanies] = useState([]);
@@ -131,7 +159,11 @@ export default function ExportMultiPage() {
           const binary = atob(res.data.data || "");
           const bytes = new Uint8Array(binary.length);
           for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-          downloadBlob(bytes, res.data.fileName || `${safeName(group.group_name)}-${month}.pdf`, res.data.mimeType || "application/pdf");
+          downloadBlob(
+            bytes,
+            res.data.fileName || groupExportFileName(group, month, settings?.brand_name, "pdf"),
+            res.data.mimeType || "application/pdf"
+          );
         } else {
           const res = await api.post(`/reports/groups/${group.id}/export/excel`, {
             month,
@@ -140,9 +172,10 @@ export default function ExportMultiPage() {
             responseType: "blob",
             timeout: 60000
           });
+          const headerFileName = filenameFromDisposition(res.headers?.["content-disposition"] || "");
           downloadBlob(
             res.data,
-            `${safeName(group.group_name)}-${month}.xlsx`,
+            headerFileName || groupExportFileName(group, month, settings?.brand_name, "xlsx"),
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           );
         }

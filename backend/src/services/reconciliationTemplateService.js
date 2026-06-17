@@ -27,6 +27,13 @@ function formatMonthLabel(month = "") {
   return `${monthValue}/${year}`;
 }
 
+function formatEnglishRevenuePeriod(month = "") {
+  if (!/^\d{4}-\d{2}$/.test(month)) return month;
+  const [year, monthValue] = month.split("-");
+  const date = new Date(Number(year), Number(monthValue) - 1, 1);
+  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
 function moneyText(value, currency = "USD") {
   const normalized = normalizedCurrency(currency);
   return new Intl.NumberFormat(
@@ -121,6 +128,241 @@ function getByPath(source, pathValue) {
       if (value == null || typeof value !== "object") return undefined;
       return value[key];
     }, source);
+}
+
+function normalizedExportLanguage(value) {
+  const language = safeStr(value).trim().toLowerCase();
+  return ["en", "english"].includes(language) ? "en" : "vi";
+}
+
+const EN_ONES = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen"
+];
+const EN_TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+const EN_SCALES = ["", "thousand", "million", "billion", "trillion"];
+
+function englishBelowThousand(value) {
+  const number = Math.floor(Math.abs(value));
+  const parts = [];
+  const hundreds = Math.floor(number / 100);
+  const rest = number % 100;
+
+  if (hundreds) parts.push(`${EN_ONES[hundreds]} hundred`);
+  if (rest) {
+    if (rest < 20) {
+      parts.push(EN_ONES[rest]);
+    } else {
+      const tens = Math.floor(rest / 10);
+      const ones = rest % 10;
+      parts.push(ones ? `${EN_TENS[tens]}-${EN_ONES[ones]}` : EN_TENS[tens]);
+    }
+  }
+
+  return parts.join(" ");
+}
+
+function englishIntegerWords(value) {
+  let number = Math.round(Math.abs(toNumber(value)));
+  if (number === 0) return "zero";
+
+  const parts = [];
+  let scaleIndex = 0;
+  while (number > 0 && scaleIndex < EN_SCALES.length) {
+    const block = number % 1000;
+    if (block) {
+      const scale = EN_SCALES[scaleIndex];
+      parts.unshift(`${englishBelowThousand(block)}${scale ? ` ${scale}` : ""}`);
+    }
+    number = Math.floor(number / 1000);
+    scaleIndex += 1;
+  }
+
+  return parts.join(" ");
+}
+
+function capitalizeFirst(value) {
+  const text = safeStr(value).trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "";
+}
+
+function englishMoneyWords(value, currency) {
+  const normalized = normalizedCurrency(currency);
+  const amount = Math.abs(toNumber(value));
+  const integer = Math.floor(amount);
+  let cents = Math.round((amount - integer) * 100);
+  let whole = integer;
+  if (cents === 100) {
+    whole += 1;
+    cents = 0;
+  }
+
+  const unit = normalized === "VND" ? "Vietnamese dong" : normalized === "GBP" ? "pounds sterling" : "US dollars";
+  const prefix = toNumber(value) < 0 ? "Minus " : "";
+  const wholeText = `${capitalizeFirst(englishIntegerWords(whole))} ${unit}`;
+  if (normalized !== "VND" && cents > 0) {
+    return `${prefix}${wholeText} and ${englishIntegerWords(cents)} cents`;
+  }
+  return `${prefix}${wholeText}`;
+}
+
+const EN_STATIC_REPLACEMENTS = [
+  [/C\u1ed8NG H\u00d2A X\u00c3 H\u1ed8I CH\u1ee6 NGH\u0128A VI\u1ec6T NAM/g, "YOUTUBE RECONCILIATION STATEMENT"],
+  [/\u0110\u1ed9c l\u1eadp - T\u1ef1 do - H\u1ea1nh ph\u00fac/g, "Revenue Share Reconciliation"],
+  [/----- o0o -----/g, ""],
+  [/BI\u00caN B\u1ea2N \u0110\u1ed0I SO\u00c1T YOUTUBE/g, "YOUTUBE RECONCILIATION MINUTES"],
+  [/B\u00ean A/g, "Party A"],
+  [/B\u00ean B/g, "Party B"],
+  [/\u0110\u1ecba ch\u1ec9/g, "Address"],
+  [/\u0110i\u1ec7n tho\u1ea1i/g, "Phone"],
+  [/\u0110\u1ea1i di\u1ec7n/g, "Representative"],
+  [/Ch\u1ee9c v\u1ee5/g, "Position"],
+  [/DOANH THU PH\u00c2N CHIA SAU \u0110\u1ed0I SO\u00c1T/g, "REVENUE SHARE AFTER RECONCILIATION"],
+  [/STT/g, "No."],
+  [/K\u00caNH/g, "Channel"],
+  [/Link K\u00eanh/g, "Channel ID"],
+  [/T\u1ed5ng Doanh Thu\s*K\u00eanh/g, "Total Channel Revenue"],
+  [/T\u1ed5ng Doanh Thu/g, "Total Revenue"],
+  [/T\u1ef7 L\u1ec7/g, "Share"],
+  [/Ghi ch\u00fa/g, "Notes"],
+  [/T\u1ed5ng Ti\u1ec1n B\u00ean A ph\u1ea3i thanh to\u00e1n cho B\u00ean B/g, "Total payable from Party A to Party B"],
+  [/T\u1ed5ng Ti\u1ec1n Party A ph\u1ea3i thanh to\u00e1n cho Party B/g, "Total payable from Party A to Party B"],
+  [/T\u1ed5ng Ti\u1ec1n/g, "Subtotal"],
+  [/Thu\u1ebf Ph\u00ed/g, "Fee"],
+  [/\u0110\u00e3 t\u1ea1m \u1ee9ng/g, "Advance"],
+  [/S\u1ed1 ti\u1ec1n b\u1eb1ng ch\u1eef/g, "Amount in words"],
+  [/Bi\u00ean b\u1ea3n n\u00e0y \u0111\u01b0\u1ee3c l\u1eadp th\u00e0nh.*$/g, "This reconciliation statement is made in two originals of equal legal validity, one for each party."],
+  [/TP\.H\u1ed3 Ch\u00ed Minh, ng\u00e0y.*$/g, "Ho Chi Minh City, date ........ month ........ year 20...."],
+  [/C\u1ed9ng H\u00f2a X\u00e3 H\u1ed9i Ch\u1ee7 Ngh\u0129a Vi\u1ec7t Nam/gi, "YOUTUBE RECONCILIATION STATEMENT"],
+  [/Bi\u00ean B\u1ea3n \u0110\u1ed1i So\u00e1t Youtube/gi, "YOUTUBE RECONCILIATION MINUTES"]
+];
+
+function translateStaticTextToEnglish(input) {
+  let output = safeStr(input);
+  for (const [pattern, replacement] of EN_STATIC_REPLACEMENTS) {
+    output = output.replace(pattern, replacement);
+  }
+  return output;
+}
+
+function applyEnglishStaticText(ws) {
+  ws.eachRow({ includeEmpty: true }, (row) => {
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      const value = cell.value;
+      if (typeof value === "string") {
+        cell.value = translateStaticTextToEnglish(value);
+        return;
+      }
+
+      if (value && typeof value === "object" && Array.isArray(value.richText)) {
+        cell.value = {
+          richText: value.richText.map((run) => ({
+            ...run,
+            text: translateStaticTextToEnglish(run.text || "")
+          }))
+        };
+      }
+    });
+  });
+}
+
+function valueCell(cell) {
+  return cell.master && cell.master.address !== cell.address ? cell.master : cell;
+}
+
+function normalizePhonePrefixText(value) {
+  return safeStr(value)
+    .replace(/((?:Phone|Phone \/ Email)\s*:?\s*)\+84\s+(?=\+)/gi, "$1")
+    .replace(/(\u0110i\u1ec7n tho\u1ea1i\s*:?\s*)\+84\s+(?=\+)/gi, "$1");
+}
+
+function normalizePhonePrefixInWorksheet(ws) {
+  ws.eachRow({ includeEmpty: true }, (row) => {
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      const target = valueCell(cell);
+      const value = target.value;
+
+      if (typeof value === "string") {
+        const normalized = normalizePhonePrefixText(value);
+        if (normalized !== value) target.value = normalized;
+        return;
+      }
+
+      if (value && typeof value === "object" && Array.isArray(value.richText)) {
+        target.value = {
+          richText: value.richText.map((run) => ({
+            ...run,
+            text: normalizePhonePrefixText(run.text || "")
+          }))
+        };
+      }
+    });
+  });
+}
+
+function rowTextCells(ws, rowNumber) {
+  const row = ws.getRow(rowNumber);
+  const cells = [];
+  const seen = new Set();
+
+  row.eachCell({ includeEmpty: false }, (cell) => {
+    const target = valueCell(cell);
+    if (seen.has(target.address)) return;
+    seen.add(target.address);
+    if (typeof target.value === "string") cells.push(target);
+  });
+
+  return cells;
+}
+
+function replaceRowText(ws, rowNumber, text) {
+  const cells = rowTextCells(ws, rowNumber);
+  if (cells.length === 0) {
+    ws.getRow(rowNumber).getCell(1).value = text;
+    return;
+  }
+
+  cells[0].value = text;
+  for (let index = 1; index < cells.length; index += 1) {
+    cells[index].value = "";
+  }
+}
+
+function clearRowText(ws, rowNumber) {
+  for (const cell of rowTextCells(ws, rowNumber)) {
+    cell.value = "";
+  }
+}
+
+function applyEnglishHeader(ws, month) {
+  replaceRowText(ws, 1, "YOUTUBE REVENUE SHARE STATEMENT");
+  replaceRowText(ws, 2, `Revenue Period: ${formatEnglishRevenuePeriod(month)}`);
+  clearRowText(ws, 4);
+}
+
+function templatePathForLanguage(language) {
+  const fileName = normalizedExportLanguage(language) === "en"
+    ? "youtube-reconciliation.template.en.xlsx"
+    : "youtube-reconciliation.template.v2.xlsx";
+  return path.resolve(__dirname, "../../templates", fileName);
 }
 
 function itemValue(item, field, payload) {
@@ -312,6 +554,7 @@ function replacePlaceholders(ws, payload, item) {
 }
 
 function makePayload(detail, company, options = {}) {
+  const language = normalizedExportLanguage(options.language);
   const currency = normalizedCurrency(detail.currency || "USD");
   const advance = toNumber(options.advance, 0);
   const fee = toNumber(detail.summary?.fee_converted, 0);
@@ -347,7 +590,7 @@ function makePayload(detail, company, options = {}) {
     table: {
       items: (detail.channels || []).map((channel, index) => ({
         no: index + 1,
-        channel: safeStr(channel.title || "Channel lỗi / die"),
+        channel: safeStr(channel.title || (language === "en" ? "Channel error / dead" : "Channel lỗi / die")),
         yt_channels_id: safeStr(channel.channel_id),
         network: safeStr(channel.network_name || "-"),
         total_usd: round2(channel.revenue_usd),
@@ -355,7 +598,9 @@ function makePayload(detail, company, options = {}) {
         payout_value: currency === "USD" ? round2(channel.share_amount) : toNumber(channel.paid ?? channel.share_amount_converted),
         payout_usd: round2(channel.share_amount),
         payout_vnd: currency === "VND" ? toNumber(channel.paid ?? channel.share_amount_converted) : null,
-        note: safeStr(channel.status === "error" ? channel.status_error : "")
+        note: safeStr(channel.status === "error"
+          ? (language === "en" ? "Could not retrieve YouTube data when adding this channel to the group" : channel.status_error)
+          : "")
       }))
     },
     sum: {
@@ -366,7 +611,7 @@ function makePayload(detail, company, options = {}) {
       tax: moneyText(fee, currency),
       advance: moneyText(advance, currency),
       payable: moneyText(payable, currency),
-      payable_words: moneyWords(payable, currency)
+      payable_words: language === "en" ? englishMoneyWords(payable, currency) : moneyWords(payable, currency)
     },
     grand_raw: {
       total_payout: totalPayout,
@@ -379,19 +624,22 @@ function makePayload(detail, company, options = {}) {
       group_channel_name: safeStr(detail.group_name),
       month_revenue: safeStr(detail.month),
       currency,
-      type_rate: currency
+      type_rate: currency,
+      language
     }
   };
 }
 
 async function generateGroupReconciliationExcel(detail, company, options = {}) {
-  const templatePath = path.resolve(__dirname, "../../templates/youtube-reconciliation.template.v2.xlsx");
-  const payload = makePayload(detail, company, options);
+  const language = normalizedExportLanguage(options.language);
+  const templatePath = templatePathForLanguage(language);
+  const payload = makePayload(detail, company, { ...options, language });
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(templatePath);
 
   for (const ws of workbook.worksheets) {
     ws.name = safeStr(detail.partner_name || detail.group_name || "Reconciliation").slice(0, 31) || "Reconciliation";
+    if (language === "en") applyEnglishStaticText(ws);
     const templateRow = findItemsTemplateRow(ws);
     const items = payload.table.items.length > 0
       ? payload.table.items
@@ -430,6 +678,8 @@ async function generateGroupReconciliationExcel(detail, company, options = {}) {
     }
 
     replacePlaceholders(ws, payload);
+    normalizePhonePrefixInWorksheet(ws);
+    if (language === "en") applyEnglishHeader(ws, detail.month || "");
   }
 
   const buffer = await workbook.xlsx.writeBuffer();

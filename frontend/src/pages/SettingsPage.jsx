@@ -127,7 +127,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 border-t border-slate-200 pt-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 border-t border-slate-200 pt-6">
             <label className="block">
               <span className="text-sm font-black text-slate-700">Website title</span>
               <input
@@ -149,6 +149,21 @@ export default function SettingsPage() {
                 )}
                 <input type="file" accept="image/*" onChange={(event) => handleFile("favicon_data_url", event.target.files?.[0])} />
               </div>
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-black text-slate-700">Default export template</span>
+              <select
+                value={form.export_template_language || "vi"}
+                onChange={(event) => setForm({ ...form, export_template_language: event.target.value })}
+                className="mt-2 w-full rounded-2xl border border-slate-300 px-4 py-3 bg-white font-bold text-slate-800"
+              >
+                <option value="vi">Vietnamese template (current)</option>
+                <option value="en">English template</option>
+              </select>
+              <span className="mt-2 block text-xs font-bold text-slate-500">
+                Used automatically for Excel and invoice PDF exports.
+              </span>
             </label>
           </div>
 

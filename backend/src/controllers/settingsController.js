@@ -6,7 +6,8 @@ const DEFAULT_SETTINGS = {
   logo_mode: "random",
   logo_data_url: "",
   web_title: "ANS Network",
-  favicon_data_url: ""
+  favicon_data_url: "",
+  export_template_language: "vi"
 };
 
 function rowsToSettings(rows) {
@@ -49,6 +50,11 @@ function normalizeSettings(body) {
 
   if (Object.prototype.hasOwnProperty.call(body, "favicon_data_url")) {
     next.favicon_data_url = String(body.favicon_data_url || "");
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "export_template_language")) {
+    const language = String(body.export_template_language || "").trim().toLowerCase();
+    next.export_template_language = ["en", "english"].includes(language) ? "en" : "vi";
   }
 
   return next;

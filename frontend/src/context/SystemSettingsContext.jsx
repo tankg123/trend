@@ -9,7 +9,8 @@ export const defaultSystemSettings = {
   logo_mode: "random",
   logo_data_url: "",
   web_title: "ANS Network",
-  favicon_data_url: ""
+  favicon_data_url: "",
+  export_template_language: "vi"
 };
 
 function ensureFaviconLink() {

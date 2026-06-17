@@ -620,6 +620,22 @@ function getBrandNameForExport() {
   }
 }
 
+function normalizeExportTemplateLanguage(value) {
+  const language = String(value || "").trim().toLowerCase();
+  return ["en", "english"].includes(language) ? "en" : "vi";
+}
+
+function getExportTemplateLanguage(requestedLanguage) {
+  if (requestedLanguage) return normalizeExportTemplateLanguage(requestedLanguage);
+
+  try {
+    const row = db.prepare("SELECT value FROM system_settings WHERE key = ?").get("export_template_language");
+    return normalizeExportTemplateLanguage(row?.value || "vi");
+  } catch {
+    return "vi";
+  }
+}
+
 function exportMonthFilePart(month = "") {
   const value = String(month || "").trim();
   const match = value.match(/^(\d{4})-(\d{2})$/);
@@ -830,8 +846,9 @@ function buildReconciliationWorkbook(detail, company) {
   return workbook;
 }
 
-async function sendExcelExport(res, detail, company) {
-  const buffer = await generateGroupReconciliationExcel(detail, company);
+async function sendExcelExport(res, detail, company, options = {}) {
+  const language = getExportTemplateLanguage(options.language);
+  const buffer = await generateGroupReconciliationExcel(detail, company, { language });
   const fileName = groupExportFileName(detail, "xlsx");
   setDownloadHeaders(res, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
   res.send(buffer);
@@ -855,6 +872,7 @@ function getUploadedPdfLogo() {
 }
 
 async function sendPdfExport(res, detail, company, options = {}) {
+  const language = getExportTemplateLanguage(options.language);
   const currency = detail.currency || "USD";
   const fileName = groupExportFileName(detail, "pdf");
   const includeSignatures = Boolean(options.includeSignatures);
@@ -2877,7 +2895,9 @@ exports.exportGroupExcel = async (req, res) => {
     }
     const detail = groupDetail(req.params.id, String(req.body?.month || req.query.month || ""));
     if (!detail) return res.status(404).json({ success: false, message: "Group not found" });
-    await sendExcelExport(res, detail, selectedCompany(req.body?.company_id || req.query.company_id));
+    await sendExcelExport(res, detail, selectedCompany(req.body?.company_id || req.query.company_id), {
+      language: req.body?.template_language || req.query.template_language
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: "Could not export Excel", error: error.message });
   }
@@ -2892,7 +2912,8 @@ exports.exportGroupPdf = async (req, res) => {
     if (!detail) return res.status(404).json({ success: false, message: "Group not found" });
     await sendPdfExport(res, detail, selectedCompany(req.body?.company_id || req.query.company_id), {
       base64: Boolean(req.body?.return_base64 || req.query.return_base64),
-      includeSignatures: Boolean(req.body?.include_signatures || req.query.include_signatures)
+      includeSignatures: Boolean(req.body?.include_signatures || req.query.include_signatures),
+      language: req.body?.template_language || req.query.template_language
     });
   } catch (error) {
     res.status(500).json({ success: false, message: "Could not export PDF", error: error.message });
