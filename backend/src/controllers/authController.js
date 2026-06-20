@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const db = require("../config/database");
 const { parseRoles } = require("../middlewares/authMiddleware");
-const { sendVerificationEmail, sendPasswordResetEmail } = require("../services/mailService");
+const { sendVerificationEmail, sendPasswordResetEmail, smtpEnabled } = require("../services/mailService");
 
 const ROLE_OPTIONS = ["admin", "Account", "Read Only", "user"];
 const ROLE_LOOKUP = new Map(ROLE_OPTIONS.map((role) => [role.toLowerCase(), role]));
@@ -245,6 +245,8 @@ function getSafeUser(user) {
 }
 
 exports.register = async (req, res) => {
+  let insertedUserId = null;
+
   try {
     const { first_name, last_name, email, password, confirm_password } = req.body;
     const firstName = String(first_name || "").trim();
@@ -282,6 +284,35 @@ exports.register = async (req, res) => {
     const existed = db.prepare("SELECT * FROM users WHERE email = ?").get(cleanEmail);
 
     if (existed) {
+      const alreadyVerified = Number(existed.email_verified || 0) === 1 && existed.status === "active";
+      if (!alreadyVerified) {
+        const fullName = `${firstName} ${lastName}`.trim();
+        const hashedPassword = bcrypt.hashSync(password, 10);
+
+        db.prepare(`
+          UPDATE users
+          SET full_name = ?, first_name = ?, last_name = ?, password = ?,
+              status = 'pending_verification', email_verified = 0, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(fullName, firstName, lastName, hashedPassword, existed.id);
+
+        const pendingUser = db.prepare("SELECT * FROM users WHERE id = ?").get(existed.id);
+        const verification = createVerificationCode(pendingUser);
+        await sendVerificationEmail({
+          to: pendingUser.email,
+          fullName: pendingUser.full_name,
+          code: verification.code
+        });
+
+        return res.json({
+          success: true,
+          requires_verification: true,
+          email: pendingUser.email,
+          expires_at: verification.expiresAt,
+          message: "This email was already pending verification. A new verification code has been sent."
+        });
+      }
+
       return res.status(409).json({
         success: false,
         message: "This email is already registered"
@@ -304,13 +335,14 @@ exports.register = async (req, res) => {
       "pending_verification",
       0
     );
+    insertedUserId = result.lastInsertRowid;
 
     const user = db.prepare(`
       SELECT id, full_name, first_name, last_name, email, role, status, email_verified, email_verified_at,
              two_factor_enabled, created_at, updated_at
       FROM users
       WHERE id = ?
-    `).get(result.lastInsertRowid);
+    `).get(insertedUserId);
 
     const verification = createVerificationCode(user);
     await sendVerificationEmail({
@@ -327,9 +359,18 @@ exports.register = async (req, res) => {
       message: "Registration successful. Please check your email for the verification code."
     });
   } catch (error) {
+    if (insertedUserId) {
+      db.prepare("DELETE FROM email_verification_codes WHERE user_id = ?").run(insertedUserId);
+      db.prepare("DELETE FROM users WHERE id = ?").run(insertedUserId);
+    }
+
+    const smtpMessage = smtpEnabled()
+      ? "Could not register account"
+      : "Could not send verification email because SMTP is not configured";
+
     res.status(500).json({
       success: false,
-      message: "Could not register account",
+      message: smtpMessage,
       error: error.message
     });
   }
