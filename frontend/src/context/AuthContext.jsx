@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import axios from "axios";
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4125/api";
 const BACKEND_API_KEY = import.meta.env.VITE_BACKEND_API_KEY || "";
 
 const AuthContext = createContext(null);
@@ -22,9 +22,7 @@ function parseRoles(value) {
   if (raw.startsWith("[")) {
     try {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.map((role) => String(role || "").trim()).filter(Boolean);
-      }
+      if (Array.isArray(parsed)) return parsed.map((role) => String(role || "").trim()).filter(Boolean);
     } catch {
       return [raw];
     }
@@ -77,14 +75,8 @@ function isTokenExpired(authToken) {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    return loadSavedUser();
-  });
-
-  const [token, setToken] = useState(() => {
-    return localStorage.getItem("token") || "";
-  });
-
+  const [user, setUser] = useState(() => loadSavedUser());
+  const [token, setToken] = useState(() => localStorage.getItem("token") || "");
   const [authLoading, setAuthLoading] = useState(true);
 
   function saveAuth(authToken, authUser) {
@@ -146,6 +138,8 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     checkAuth();
+    // Initial session restore should run once when the provider mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -170,27 +164,14 @@ export function AuthProvider({ children }) {
     return () => window.clearTimeout(timeoutId);
   }, [token]);
 
-  return (
-    (() => {
-      const roles = parseRoles(user?.roles?.length ? user.roles : user?.role);
-      const normalizedRoles = roles.map(normalizedRole);
-      const role = normalizedRoles[0] || normalizedRole(user?.role);
-      const isAdmin = hasRole(roles, "admin") || roles.some(isSuperAdminRole);
-      const isReportManager = hasRole(roles, "Report Manager");
-      const isChannelManagement = hasRole(roles, "Channel Management");
-      const isContentIdRole = hasRole(roles, "Content ID");
-      const isClaimManagerRole = hasRole(roles, "Claim Manager");
-      const isExpenseRole = hasRole(roles, "Expense");
-      const isPartnerRole = hasRole(roles, "Partner");
-      const isAccountRole = hasRole(roles, "Account");
-      const isAccountClaimManagerRole = hasRole(roles, "Account Claim Manager");
-      const isReadOnly = hasRole(roles, "Read Only");
-      const canViewContentIdSettings = isAdmin || isContentIdRole;
-      const canViewContentIdFull = isAdmin || isContentIdRole;
-      const canViewContentIdClaim = canViewContentIdFull || isClaimManagerRole;
-      const canViewPartnerDashboard = isPartnerRole && !isAdmin;
+  const roles = parseRoles(user?.roles?.length ? user.roles : user?.role);
+  const normalizedRoles = roles.map(normalizedRole);
+  const role = normalizedRoles[0] || normalizedRole(user?.role);
+  const isAdmin = hasRole(roles, "admin") || roles.some(isSuperAdminRole);
+  const isAccountRole = hasRole(roles, "Account");
+  const isReadOnly = hasRole(roles, "Read Only");
 
-      return (
+  return (
     <AuthContext.Provider
       value={{
         user,
@@ -204,36 +185,15 @@ export function AuthProvider({ children }) {
         normalizedRoles,
         isSuperAdmin: roles.some(isSuperAdminRole),
         isAdmin,
-        isReportManager,
-        isChannelManagement,
-        isContentIdRole,
-        isClaimManagerRole,
-        isExpenseRole,
-        isPartnerRole,
         isAccountRole,
-        isAccountClaimManagerRole,
         isReadOnly,
-        isManager: isReportManager,
-        canViewReports: isAdmin || isReportManager,
-        canViewEmail: isAdmin || isReportManager,
-        canViewPartnerDashboard,
-        canViewPartnerGroups: isAdmin || isReportManager || isPartnerRole,
-        canViewChannelManagement: isAdmin || isChannelManagement,
-        canViewContentId: canViewContentIdClaim,
-        canViewContentIdFull,
-        canViewContentIdClaim,
-        canViewExpense: isAdmin || isExpenseRole,
-        canViewPartner: isAdmin || isReportManager || isChannelManagement,
-        canViewAccount: isAdmin || isAccountRole || isAccountClaimManagerRole,
+        canViewAccount: isAdmin || isAccountRole,
         canViewSettings: isAdmin,
-        canViewContentIdSettings,
         isUser: role === "user"
       }}
     >
       {children}
     </AuthContext.Provider>
-      );
-    })()
   );
 }
 

@@ -66,7 +66,7 @@ export default function LoginPage() {
           (error.code === "ECONNABORTED"
             ? "Server connection timed out, please try again"
             : "") ||
-          "Login failed"
+          "Cannot connect to the backend server"
       );
     } finally {
       setLoading(false);
@@ -89,7 +89,7 @@ export default function LoginPage() {
             <h1 className="text-4xl font-black leading-tight">{settings.brand_name || "ANS Network"}</h1>
 
             <p className="text-slate-300 mt-5 text-lg">
-              YouTube channel, report, partner, and revenue management platform.
+              YouTube trend discovery and channel research platform.
             </p>
           </div>
         </div>

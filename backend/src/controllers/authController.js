@@ -5,7 +5,7 @@ const db = require("../config/database");
 const { parseRoles } = require("../middlewares/authMiddleware");
 const { sendVerificationEmail, sendPasswordResetEmail } = require("../services/mailService");
 
-const ROLE_OPTIONS = ["admin", "Account", "Account Claim Manager", "Report Manager", "Channel Management", "Content ID", "Expense", "Partner", "Claim Manager", "Read Only", "user"];
+const ROLE_OPTIONS = ["admin", "Account", "Read Only", "user"];
 const ROLE_LOOKUP = new Map(ROLE_OPTIONS.map((role) => [role.toLowerCase(), role]));
 ROLE_LOOKUP.set("readonly", "Read Only");
 ROLE_LOOKUP.set("read online", "Read Only");
@@ -60,20 +60,6 @@ function isAdminUser(user) {
 function isAdminActor(user) {
   const roles = rawUserRoles(user);
   return roles.includes("admin") || roles.some((role) => SUPER_ADMIN_ROLES.has(role));
-}
-
-function userHasAnyRole(user, roles) {
-  const userRoles = rawUserRoles(user);
-  const wanted = roles.map((role) => String(role).toLowerCase());
-  return userRoles.some((role) => wanted.includes(role));
-}
-
-function isAccountClaimManagerActor(user) {
-  return (
-    !isAdminActor(user) &&
-    !userHasAnyRole(user, ["Account"]) &&
-    userHasAnyRole(user, ["Account Claim Manager"])
-  );
 }
 
 function isEmail(value = "") {
@@ -901,27 +887,8 @@ exports.getAllUsers = (req, res) => {
     const actorIsAdmin = isAdminActor(req.user);
     const users = db.prepare(`
       SELECT
-        u.id, u.full_name, u.email, u.role, u.status, u.two_factor_enabled, u.created_at, u.updated_at,
-        COALESCE(
-          json_group_array(
-            CASE
-              WHEN g.id IS NULL THEN NULL
-              ELSE json_object('id', g.id, 'group_name', g.group_name, 'partner_name', p.partner_name)
-            END
-          ),
-          '[]'
-        ) AS assigned_groups,
-        COALESCE((
-          SELECT json_group_array(json_object('id', l.id, 'name', l.name, 'display_name', l.display_name))
-          FROM user_content_id_labels ucil
-          JOIN content_id_labels l ON l.id = ucil.label_id
-          WHERE ucil.user_id = u.id
-        ), '[]') AS assigned_labels
+        u.id, u.full_name, u.email, u.role, u.status, u.two_factor_enabled, u.created_at, u.updated_at
       FROM users u
-      LEFT JOIN user_group_permissions ugp ON ugp.user_id = u.id
-      LEFT JOIN channel_groups g ON g.id = ugp.group_id
-      LEFT JOIN partners p ON p.id = g.partner_id
-      GROUP BY u.id
       ORDER BY u.id DESC
     `).all().map((item) => {
       const isSuperAdmin = isSuperAdminUser(item);
@@ -930,9 +897,7 @@ exports.getAllUsers = (req, res) => {
         ...item,
         role: roles[0] || "user",
         roles,
-        is_super_admin: isSuperAdmin,
-        assigned_groups: parseJsonArray(item.assigned_groups).filter(Boolean),
-        assigned_labels: parseJsonArray(item.assigned_labels).filter(Boolean)
+        is_super_admin: isSuperAdmin
       };
     })
       .filter((item) => !item.is_super_admin)
@@ -961,7 +926,6 @@ exports.updateUserRole = (req, res) => {
     }
     const roles = normalizeRoleList(requestedRoles);
     const actorIsAdmin = isAdminActor(req.user);
-    const actorIsAccountClaimManager = isAccountClaimManagerActor(req.user);
 
     if (!roles.length || roles.some((role) => !ROLE_OPTIONS.includes(role))) {
       return res.status(400).json({
@@ -999,38 +963,11 @@ exports.updateUserRole = (req, res) => {
       });
     }
 
-    let finalRoles = roles;
-    if (actorIsAccountClaimManager) {
-      const allowedRequestedRoles = new Set(["Claim Manager", "user"]);
-      if (roles.some((role) => !allowedRequestedRoles.has(role))) {
-        return res.status(403).json({
-          success: false,
-          message: "Account Claim Manager can only assign Claim Manager role"
-        });
-      }
-
-      const currentRoles = normalizeRoleList(user.role);
-      const preservedRoles = currentRoles.filter((role) => role !== "Claim Manager" && role !== "user");
-      finalRoles = roles.includes("Claim Manager")
-        ? [...new Set([...preservedRoles, "Claim Manager"])]
-        : preservedRoles.length
-          ? preservedRoles
-          : ["user"];
-    }
-
     db.prepare(`
       UPDATE users
       SET role = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(serializeRoles(finalRoles), id);
-
-    if (!finalRoles.includes("Partner")) {
-      db.prepare("DELETE FROM user_group_permissions WHERE user_id = ?").run(id);
-    }
-
-    if (!finalRoles.includes("Claim Manager")) {
-      db.prepare("DELETE FROM user_content_id_labels WHERE user_id = ?").run(id);
-    }
+    `).run(serializeRoles(roles), id);
 
     res.json({
       success: true,
@@ -1104,104 +1041,6 @@ exports.updateUserStatus = (req, res) => {
       message: "Lỗi cập nhật trạng thái user",
       error: error.message
     });
-  }
-};
-
-exports.updateUserGroups = (req, res) => {
-  try {
-    const { id } = req.params;
-    const groupIds = Array.isArray(req.body?.group_ids)
-      ? req.body.group_ids.map((value) => Number(value)).filter((value) => Number.isFinite(value))
-      : [];
-
-    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
-    if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
-
-    if (isSuperAdminUser(user)) {
-      return rejectProtectedSuperAdmin(res);
-    }
-
-    if (!isAdminActor(req.user) && isAdminUser(user)) {
-      return res.status(403).json({ success: false, message: "Account role cannot update admin users" });
-    }
-
-    if (!userHasRole(user, "Partner")) {
-      return res.status(400).json({ success: false, message: "Only Partner role can be assigned groups" });
-    }
-
-    const uniqueGroupIds = [...new Set(groupIds)];
-    const validGroups = uniqueGroupIds.length
-      ? db.prepare(`SELECT id FROM channel_groups WHERE id IN (${uniqueGroupIds.map(() => "?").join(",")})`).all(...uniqueGroupIds).map((row) => row.id)
-      : [];
-
-    const transaction = db.transaction(() => {
-      db.prepare("DELETE FROM user_group_permissions WHERE user_id = ?").run(id);
-      const stmt = db.prepare("INSERT OR IGNORE INTO user_group_permissions (user_id, group_id) VALUES (?, ?)");
-      validGroups.forEach((groupId) => stmt.run(id, groupId));
-    });
-
-    transaction();
-
-    res.json({
-      success: true,
-      message: "Partner groups updated",
-      data: { group_ids: validGroups }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Could not update partner groups", error: error.message });
-  }
-};
-
-exports.updateUserContentIdLabels = (req, res) => {
-  try {
-    const { id } = req.params;
-    const labelIds = Array.isArray(req.body?.label_ids)
-      ? req.body.label_ids.map((value) => Number(value)).filter((value) => Number.isFinite(value))
-      : [];
-
-    const user = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
-    if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
-
-    if (isSuperAdminUser(user)) {
-      return rejectProtectedSuperAdmin(res);
-    }
-
-    if (!isAdminActor(req.user) && isAdminUser(user)) {
-      return res.status(403).json({ success: false, message: "Account role cannot update admin users" });
-    }
-
-    if (isAccountClaimManagerActor(req.user) && !userHasRole(user, "Claim Manager")) {
-      return res.status(400).json({ success: false, message: "Assign Claim Manager role before adding claim labels" });
-    }
-
-    if (!userHasRole(user, "Claim Manager")) {
-      return res.status(400).json({ success: false, message: "Only Claim Manager role can be assigned labels" });
-    }
-
-    const uniqueLabelIds = [...new Set(labelIds)];
-    const validLabels = uniqueLabelIds.length
-      ? db.prepare(`SELECT id FROM content_id_labels WHERE id IN (${uniqueLabelIds.map(() => "?").join(",")})`).all(...uniqueLabelIds).map((row) => row.id)
-      : [];
-
-    const transaction = db.transaction(() => {
-      db.prepare("DELETE FROM user_content_id_labels WHERE user_id = ?").run(id);
-      const stmt = db.prepare("INSERT OR IGNORE INTO user_content_id_labels (user_id, label_id) VALUES (?, ?)");
-      validLabels.forEach((labelId) => stmt.run(id, labelId));
-    });
-
-    transaction();
-
-    res.json({
-      success: true,
-      message: "Claim labels updated",
-      data: { label_ids: validLabels }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: "Could not update claim labels", error: error.message });
   }
 };
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { BarChart3, BriefcaseBusiness, Building2, ChevronDown, CircleDollarSign, Disc3, Eye, EyeOff, FileAudio, FileSignature, FileSpreadsheet, FileVideo, Home, Landmark, Languages, LockKeyhole, LogOut, Mail, Menu, Moon, Network, PackageSearch, Percent, ReceiptText, Save, Settings, ShieldCheck, Sun, Tags, UserRound, Users, UsersRound, Video, WalletCards, X } from "lucide-react";
+import { ChevronDown, Eye, EyeOff, Home, Languages, LockKeyhole, LogOut, Menu, Moon, Save, Settings, ShieldCheck, Sun, TrendingUp, UserRound, X, Video } from "lucide-react";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../context/I18nContext";
@@ -25,15 +25,9 @@ function strongPasswordError(password) {
 function PasswordInput({ label, value, onChange, shown, onToggle }) {
   return (
     <label className="block">
-      <span className="font-black text-slate-700 mb-2 block">{label}</span>
+      <span className="mb-2 block font-black text-slate-700">{label}</span>
       <div className="flex items-center rounded-2xl border border-slate-300 px-4 py-3 focus-within:border-blue-500">
-        <input
-          type={shown ? "text" : "password"}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="w-full outline-none"
-          required
-        />
+        <input type={shown ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} className="w-full outline-none" required />
         <button type="button" onClick={onToggle} className="ml-2 text-slate-400 hover:text-blue-600">
           {shown ? <EyeOff size={18} /> : <Eye size={18} />}
         </button>
@@ -44,7 +38,7 @@ function PasswordInput({ label, value, onChange, shown, onToggle }) {
 
 export default function Topbar() {
   const location = useLocation();
-  const { user, logout, updateSavedUser, canViewReports, canViewEmail, canViewChannelManagement, canViewContentId, canViewContentIdFull, canViewContentIdClaim, canViewExpense, canViewPartner, canViewAccount, canViewSettings, canViewContentIdSettings, canViewPartnerGroups } = useAuth();
+  const { user, logout, updateSavedUser, canViewAccount, canViewSettings } = useAuth();
   const { language, setLanguage, t } = useI18n();
   const { theme, setTheme } = useTheme();
   const { settings } = useSystemSettings();
@@ -64,98 +58,15 @@ export default function Topbar() {
   const useUploadedLogo = settings?.logo_mode === "upload" && settings?.logo_data_url;
   const brandName = settings?.brand_name || "ANS Network";
   const subtitle = settings?.brand_subtitle || "MCN Manager System";
-  const hasAnyAppAccess = canViewChannelManagement || canViewReports || canViewEmail || canViewContentId || canViewExpense || canViewPartner || canViewAccount || canViewSettings || canViewContentIdSettings || canViewPartnerGroups;
-  const mobileSections = [
-    {
-      title: "Main",
-      show: hasAnyAppAccess,
-      items: [{ name: "Home", path: "/home", icon: Home }]
-    },
-    {
-      title: "Channel Management",
-      show: canViewChannelManagement,
-      items: [
-        { name: "Channel Management", path: "/channel-management", icon: Video },
-        { name: "Collaborators", path: "/channel-management/collaborators", icon: Users },
-        { name: "Sharing", path: "/channel-management/sharing", icon: Percent }
-      ]
-    },
-    {
-      title: t("report"),
-      show: canViewReports || canViewPartnerGroups,
-      items: [
-        ...(canViewReports ? [
-          { name: "Dashboard", path: "/report-dashboard", icon: BarChart3 },
-          { name: t("report"), path: "/reports", icon: FileSpreadsheet },
-          { name: "Export Multi", path: "/export-multi", icon: FileSpreadsheet },
-          { name: "Channel", path: "/channels", icon: Video },
-          { name: t("exchangeRates"), path: "/exchange-rates", icon: CircleDollarSign },
-          { name: t("company"), path: "/companies", icon: BriefcaseBusiness }
-        ] : []),
-        ...(canViewReports || canViewPartnerGroups ? [{ name: t("group"), path: "/groups", icon: UsersRound }] : [])
-      ]
-    },
-    {
-      title: "Content ID",
-      show: canViewContentId,
-      items: [
-        { name: "Creator CSV", path: "/content-id/creator", icon: FileAudio, show: canViewContentIdFull },
-        { name: "Web Asset Reference", path: "/content-id/web-assets", icon: FileVideo, show: canViewContentIdFull },
-        { name: "Product Manager", path: "/content-id/products", icon: PackageSearch, show: canViewContentIdFull },
-        { name: "Claim Manager", path: "/content-id/claims", icon: ShieldCheck, show: canViewContentIdClaim },
-        { name: "Label", path: "/content-id/labels", icon: Tags, show: canViewContentIdClaim },
-        { name: "Artist", path: "/content-id/artists", icon: UserRound, show: canViewContentIdFull }
-      ].filter((item) => item.show)
-    },
-    {
-      title: t("expense"),
-      show: canViewExpense,
-      items: [
-        { name: t("overview"), path: "/expenses/overview", icon: BarChart3 },
-        { name: t("expenseGroups"), path: "/expenses/categories", icon: ReceiptText },
-        { name: t("transactions"), path: "/expenses/transactions", icon: FileSpreadsheet },
-        { name: t("accounts"), path: "/expenses/accounts", icon: Landmark },
-        { name: t("revenue"), path: "/expenses/revenue", icon: CircleDollarSign }
-      ]
-    },
-    {
-      title: "Partner & Contract",
-      show: canViewPartner,
-      items: [
-        { name: "Overview", path: "/partners/overview", icon: BarChart3 },
-        { name: "Partner", path: "/partners/list", icon: Building2 },
-        { name: "Contract", path: "/partners/contracts", icon: FileSignature }
-      ]
-    },
-    {
-      title: "Email",
-      show: canViewEmail,
-      items: [{ name: "Email Notification", path: "/email/notification", icon: Mail }]
-    },
-    {
-      title: "Account",
-      show: canViewAccount,
-      items: [{ name: t("account"), path: "/account", icon: UserRound }]
-    },
-    {
-      title: t("settings"),
-      show: canViewSettings || canViewContentIdSettings,
-      items: [
-        ...(canViewSettings ? [{ name: t("systemSettings"), path: "/settings/system", icon: Settings }] : []),
-        ...(canViewSettings ? [{ name: t("network"), path: "/networks", icon: Network }] : []),
-        ...(canViewContentIdSettings ? [{ name: "Content ID Setting", path: "/settings/content-id", icon: Disc3 }] : [])
-      ]
-    }
-  ].filter((section) => section.show && section.items.length);
-  const [form, setForm] = useState({
-    full_name: user?.full_name || "",
-    email: user?.email || ""
-  });
-  const [passwordForm, setPasswordForm] = useState({
-    current_password: "",
-    new_password: "",
-    confirm_password: ""
-  });
+  const mobileItems = [
+    { name: "Home", path: "/home", icon: Home, show: true },
+    { name: "Trend Youtube", path: "/trend-youtube", icon: TrendingUp, show: true },
+    { name: "Get Channel", path: "/get-channel", icon: Video, show: true },
+    { name: t("account"), path: "/account", icon: UserRound, show: canViewAccount },
+    { name: t("settings"), path: "/settings/system", icon: Settings, show: canViewSettings }
+  ].filter((item) => item.show);
+  const [form, setForm] = useState({ full_name: user?.full_name || "", email: user?.email || "" });
+  const [passwordForm, setPasswordForm] = useState({ current_password: "", new_password: "", confirm_password: "" });
 
   function handleLogout() {
     logout();
@@ -269,10 +180,10 @@ export default function Topbar() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 h-14 bg-white/95 backdrop-blur border-b border-slate-200 px-4 lg:px-5 flex items-center justify-between">
-        <div className="lg:hidden flex min-w-0 items-center gap-3">
-          <div className="w-9 h-9 shrink-0 rounded-full bg-white border border-slate-200 flex items-center justify-center overflow-hidden">
-            <img src={useUploadedLogo ? settings.logo_data_url : "https://revenue.ansnetwork.vn/images/logo-slideBar.png"} alt={brandName} className={useUploadedLogo ? "h-full w-full object-cover" : "w-6 h-6 object-contain"} />
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur lg:px-5">
+        <div className="flex min-w-0 items-center gap-3 lg:hidden">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white">
+            <img src={useUploadedLogo ? settings.logo_data_url : "https://revenue.ansnetwork.vn/images/logo-slideBar.png"} alt={brandName} className={useUploadedLogo ? "h-full w-full object-cover" : "h-6 w-6 object-contain"} />
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-black text-slate-950">{brandName}</p>
@@ -289,7 +200,7 @@ export default function Topbar() {
               setMobileMenuOpen((value) => !value);
               setOpen(false);
             }}
-            className="lg:hidden flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm hover:border-blue-200"
+            className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm hover:border-blue-200 lg:hidden"
             aria-label="Open navigation"
           >
             <Menu size={20} />
@@ -301,14 +212,14 @@ export default function Topbar() {
               setOpen((value) => !value);
               setMobileMenuOpen(false);
             }}
-            className="h-10 rounded-2xl border border-slate-200 bg-white px-2 pr-3 flex items-center gap-2 shadow-sm hover:border-blue-200"
+            className="flex h-10 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-2 pr-3 shadow-sm hover:border-blue-200"
           >
-            <span className="w-7 h-7 rounded-full text-white flex items-center justify-center text-xs font-black" style={{ backgroundColor: avatarColor }}>
+            <span className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-black text-white" style={{ backgroundColor: avatarColor }}>
               {user?.full_name?.charAt(0)?.toUpperCase() || "U"}
             </span>
-            <span className="hidden sm:block text-left">
-              <span className="block text-xs font-black text-slate-900 leading-tight">{user?.full_name || "User"}</span>
-              <span className="block text-[10px] font-bold text-slate-400 leading-tight">{user?.role}</span>
+            <span className="hidden text-left sm:block">
+              <span className="block text-xs font-black leading-tight text-slate-900">{user?.full_name || "User"}</span>
+              <span className="block text-[10px] font-bold leading-tight text-slate-400">{user?.role}</span>
             </span>
             <ChevronDown size={15} className="text-slate-400" />
           </button>
@@ -322,44 +233,34 @@ export default function Topbar() {
                   <p className="truncate text-xs font-bold text-slate-500">{subtitle}</p>
                 </div>
               </div>
-              <div className="space-y-3">
-                {mobileSections.map((section) => (
-                  <div key={section.title}>
-                    <p className="mb-2 px-2 text-[11px] font-black uppercase tracking-wider text-slate-400">{section.title}</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {section.items.map((item) => {
-                        const Icon = item.icon;
-                        const active = location.pathname === item.path || (location.pathname === "/" && item.path === "/home") || (location.pathname === "/partners" && item.path === "/partners/overview");
-                        return (
-                          <Link
-                            key={item.path}
-                            to={item.path}
-                            onClick={() => setMobileMenuOpen(false)}
-                            className={[
-                              "flex min-h-12 items-center justify-center gap-2 rounded-2xl px-3 py-2 text-center text-sm font-black",
-                              active ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
-                            ].join(" ")}
-                          >
-                            <Icon size={17} />
-                            <span className="leading-tight">{item.name}</span>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+              <div className="grid grid-cols-2 gap-2">
+                {mobileItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = location.pathname === item.path || (location.pathname === "/" && item.path === "/home");
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={["flex min-h-12 items-center justify-center gap-2 rounded-2xl px-3 py-2 text-center text-sm font-black", active ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"].join(" ")}
+                    >
+                      <Icon size={17} />
+                      <span className="leading-tight">{item.name}</span>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
           )}
 
           {open && (
-            <div className="absolute right-0 top-12 w-72 rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
-              <div className="p-4 border-b border-slate-100">
+            <div className="absolute right-0 top-12 w-72 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+              <div className="border-b border-slate-100 p-4">
                 <p className="font-black text-slate-900">{user?.full_name}</p>
-                <p className="text-sm text-slate-500 truncate">{user?.email}</p>
+                <p className="truncate text-sm text-slate-500">{user?.email}</p>
               </div>
-              <div className="p-3 border-b border-slate-100">
-                <div className="flex items-center gap-2 text-xs font-black text-slate-500 mb-2">
+              <div className="border-b border-slate-100 p-3">
+                <div className="mb-2 flex items-center gap-2 text-xs font-black text-slate-500">
                   <Languages size={14} /> Language
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -367,37 +268,29 @@ export default function Topbar() {
                   <button type="button" onClick={() => setLanguage("vi")} className={`rounded-xl px-3 py-2 text-xs font-black ${language === "vi" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>VI</button>
                 </div>
               </div>
-              <div className="p-3 border-b border-slate-100">
-                <div className="flex items-center gap-2 text-xs font-black text-slate-500 mb-2">
+              <div className="border-b border-slate-100 p-3">
+                <div className="mb-2 flex items-center gap-2 text-xs font-black text-slate-500">
                   <Sun size={14} /> Theme
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setTheme("light")}
-                    className={`rounded-xl px-3 py-2 text-xs font-black flex items-center justify-center gap-1 ${theme === "light" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}
-                  >
+                  <button type="button" onClick={() => setTheme("light")} className={`flex items-center justify-center gap-1 rounded-xl px-3 py-2 text-xs font-black ${theme === "light" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>
                     <Sun size={13} /> Light
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setTheme("dark")}
-                    className={`rounded-xl px-3 py-2 text-xs font-black flex items-center justify-center gap-1 ${theme === "dark" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}
-                  >
+                  <button type="button" onClick={() => setTheme("dark")} className={`flex items-center justify-center gap-1 rounded-xl px-3 py-2 text-xs font-black ${theme === "dark" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>
                     <Moon size={13} /> Dark
                   </button>
                 </div>
               </div>
-              <button type="button" onClick={openSettings} className="w-full px-4 py-3 flex items-center gap-2 text-left font-bold text-slate-700 hover:bg-slate-50">
+              <button type="button" onClick={openSettings} className="flex w-full items-center gap-2 px-4 py-3 text-left font-bold text-slate-700 hover:bg-slate-50">
                 <Settings size={16} /> Profile settings
               </button>
-              <button type="button" onClick={openPasswordModal} className="w-full px-4 py-3 flex items-center gap-2 text-left font-bold text-slate-700 hover:bg-slate-50">
+              <button type="button" onClick={openPasswordModal} className="flex w-full items-center gap-2 px-4 py-3 text-left font-bold text-slate-700 hover:bg-slate-50">
                 <LockKeyhole size={16} /> Change password
               </button>
-              <button type="button" onClick={openTwoFactorModal} className="w-full px-4 py-3 flex items-center gap-2 text-left font-bold text-slate-700 hover:bg-slate-50">
+              <button type="button" onClick={openTwoFactorModal} className="flex w-full items-center gap-2 px-4 py-3 text-left font-bold text-slate-700 hover:bg-slate-50">
                 <ShieldCheck size={16} /> Two-factor authentication
               </button>
-              <button type="button" onClick={handleLogout} className="w-full px-4 py-3 flex items-center gap-2 text-left font-bold text-red-600 hover:bg-red-50">
+              <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 px-4 py-3 text-left font-bold text-red-600 hover:bg-red-50">
                 <LogOut size={16} /> Logout
               </button>
             </div>
@@ -406,34 +299,34 @@ export default function Topbar() {
       </header>
 
       {settingsOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={saveProfile} className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <form onSubmit={saveProfile} className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
               <div>
                 <h2 className="text-2xl font-black text-slate-950">Profile settings</h2>
-                <p className="text-sm text-slate-500 mt-1">Update your account information.</p>
+                <p className="mt-1 text-sm text-slate-500">Update your account information.</p>
               </div>
-              <button type="button" onClick={() => setSettingsOpen(false)} className="w-11 h-11 rounded-xl border border-slate-300 flex items-center justify-center"><X size={20} /></button>
+              <button type="button" onClick={() => setSettingsOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300"><X size={20} /></button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="space-y-4 p-6">
               {message && <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-bold text-red-600">{message}</div>}
               <label className="block">
-                <span className="font-black text-slate-700 mb-2 block">Full name</span>
+                <span className="mb-2 block font-black text-slate-700">Full name</span>
                 <div className="flex items-center gap-2 rounded-2xl border border-slate-300 px-4 py-3">
                   <UserRound size={18} className="text-slate-400" />
                   <input value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} className="w-full outline-none" required />
                 </div>
               </label>
               <label className="block">
-                <span className="font-black text-slate-700 mb-2 block">Email</span>
+                <span className="mb-2 block font-black text-slate-700">Email</span>
                 <input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-500" required />
               </label>
             </div>
 
-            <div className="px-6 py-5 border-t border-slate-200 flex justify-end gap-3">
-              <button type="button" onClick={() => setSettingsOpen(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Cancel</button>
-              <button disabled={saving} className="px-5 py-3 rounded-2xl bg-blue-600 text-white font-black flex items-center gap-2 disabled:opacity-60">
+            <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-5">
+              <button type="button" onClick={() => setSettingsOpen(false)} className="rounded-2xl border border-slate-300 px-5 py-3 font-bold">Cancel</button>
+              <button disabled={saving} className="flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-black text-white disabled:opacity-60">
                 <Save size={18} /> Save profile
               </button>
             </div>
@@ -442,17 +335,17 @@ export default function Topbar() {
       )}
 
       {passwordOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={savePassword} className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <form onSubmit={savePassword} className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
               <div>
                 <h2 className="text-2xl font-black text-slate-950">Change password</h2>
-                <p className="text-sm text-slate-500 mt-1">Use a strong password with uppercase, lowercase, number, and special character.</p>
+                <p className="mt-1 text-sm text-slate-500">Use a strong password with uppercase, lowercase, number, and special character.</p>
               </div>
-              <button type="button" onClick={() => setPasswordOpen(false)} className="w-11 h-11 rounded-xl border border-slate-300 flex items-center justify-center"><X size={20} /></button>
+              <button type="button" onClick={() => setPasswordOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300"><X size={20} /></button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="space-y-4 p-6">
               {passwordMessage && <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-bold text-red-600">{passwordMessage}</div>}
               <PasswordInput label="Current password" value={passwordForm.current_password} onChange={(value) => setPasswordForm({ ...passwordForm, current_password: value })} shown={showPasswords.current} onToggle={() => setShowPasswords({ ...showPasswords, current: !showPasswords.current })} />
               <PasswordInput label="New password" value={passwordForm.new_password} onChange={(value) => setPasswordForm({ ...passwordForm, new_password: value })} shown={showPasswords.next} onToggle={() => setShowPasswords({ ...showPasswords, next: !showPasswords.next })} />
@@ -460,9 +353,9 @@ export default function Topbar() {
               <p className="text-xs font-bold text-slate-500">Required: at least 8 characters, uppercase, lowercase, number, and special character.</p>
             </div>
 
-            <div className="px-6 py-5 border-t border-slate-200 flex justify-end gap-3">
-              <button type="button" onClick={() => setPasswordOpen(false)} className="px-5 py-3 rounded-2xl border border-slate-300 font-bold">Cancel</button>
-              <button disabled={saving} className="px-5 py-3 rounded-2xl bg-blue-600 text-white font-black flex items-center gap-2 disabled:opacity-60">
+            <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-5">
+              <button type="button" onClick={() => setPasswordOpen(false)} className="rounded-2xl border border-slate-300 px-5 py-3 font-bold">Cancel</button>
+              <button disabled={saving} className="flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-black text-white disabled:opacity-60">
                 <LockKeyhole size={18} /> Change password
               </button>
             </div>
@@ -471,49 +364,38 @@ export default function Topbar() {
       )}
 
       {twoFactorOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden">
-            <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
               <div>
                 <h2 className="text-2xl font-black text-slate-950">Two-factor authentication</h2>
-                <p className="text-sm text-slate-500 mt-1">Use Google Authenticator or any TOTP app to protect your login.</p>
+                <p className="mt-1 text-sm text-slate-500">Use Google Authenticator or any TOTP app to protect your login.</p>
               </div>
-              <button type="button" onClick={() => setTwoFactorOpen(false)} className="w-11 h-11 rounded-xl border border-slate-300 flex items-center justify-center"><X size={20} /></button>
+              <button type="button" onClick={() => setTwoFactorOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300"><X size={20} /></button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="space-y-4 p-6">
               {twoFactorMessage && <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 font-bold text-red-600">{twoFactorMessage}</div>}
 
               {Number(user?.two_factor_enabled || 0) === 1 ? (
                 <form onSubmit={disableTwoFactor} className="space-y-4">
-                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-emerald-700 font-bold">
-                    2FA is currently enabled for this account.
-                  </div>
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 font-bold text-emerald-700">2FA is currently enabled for this account.</div>
                   <PasswordInput label="Current password" value={twoFactorForm.password} onChange={(value) => setTwoFactorForm({ ...twoFactorForm, password: value })} shown={showPasswords.twoFactorPassword} onToggle={() => setShowPasswords({ ...showPasswords, twoFactorPassword: !showPasswords.twoFactorPassword })} />
                   <label className="block">
-                    <span className="font-black text-slate-700 mb-2 block">Authenticator code</span>
-                    <input
-                      value={twoFactorForm.code}
-                      onChange={(event) => setTwoFactorForm({ ...twoFactorForm, code: event.target.value })}
-                      inputMode="numeric"
-                      maxLength={6}
-                      className="w-full rounded-2xl border border-slate-300 px-4 py-3 tracking-[0.35em] font-black"
-                      required
-                    />
+                    <span className="mb-2 block font-black text-slate-700">Authenticator code</span>
+                    <input value={twoFactorForm.code} onChange={(event) => setTwoFactorForm({ ...twoFactorForm, code: event.target.value })} inputMode="numeric" maxLength={6} className="w-full rounded-2xl border border-slate-300 px-4 py-3 font-black tracking-[0.35em]" required />
                   </label>
                   <button disabled={saving} className="w-full rounded-2xl bg-red-600 px-5 py-3 font-black text-white disabled:opacity-60">Disable 2FA</button>
                 </form>
               ) : (
                 <div className="space-y-4">
                   {!twoFactorSetup ? (
-                    <button onClick={setupTwoFactor} disabled={saving} className="w-full rounded-2xl bg-blue-600 px-5 py-3 font-black text-white disabled:opacity-60">
-                      Generate QR code
-                    </button>
+                    <button onClick={setupTwoFactor} disabled={saving} className="w-full rounded-2xl bg-blue-600 px-5 py-3 font-black text-white disabled:opacity-60">Generate QR code</button>
                   ) : (
                     <form onSubmit={enableTwoFactor} className="space-y-4">
                       <div className="grid gap-4 md:grid-cols-[260px_1fr]">
-                        <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 flex items-center justify-center">
-                          <img src={twoFactorSetup.qr_url} alt="2FA QR code" className="w-56 h-56" />
+                        <div className="flex items-center justify-center rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                          <img src={twoFactorSetup.qr_url} alt="2FA QR code" className="h-56 w-56" />
                         </div>
                         <div className="rounded-3xl border border-slate-200 p-4">
                           <p className="font-black text-slate-950">Scan this QR in Google Authenticator.</p>
@@ -522,16 +404,8 @@ export default function Topbar() {
                         </div>
                       </div>
                       <label className="block">
-                        <span className="font-black text-slate-700 mb-2 block">Enter 6-digit code</span>
-                        <input
-                          value={twoFactorForm.code}
-                          onChange={(event) => setTwoFactorForm({ ...twoFactorForm, code: event.target.value })}
-                          inputMode="numeric"
-                          maxLength={6}
-                          placeholder="123456"
-                          className="w-full rounded-2xl border border-slate-300 px-4 py-3 tracking-[0.35em] font-black"
-                          required
-                        />
+                        <span className="mb-2 block font-black text-slate-700">Enter 6-digit code</span>
+                        <input value={twoFactorForm.code} onChange={(event) => setTwoFactorForm({ ...twoFactorForm, code: event.target.value })} inputMode="numeric" maxLength={6} placeholder="123456" className="w-full rounded-2xl border border-slate-300 px-4 py-3 font-black tracking-[0.35em]" required />
                       </label>
                       <button disabled={saving} className="w-full rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white disabled:opacity-60">Enable 2FA</button>
                     </form>

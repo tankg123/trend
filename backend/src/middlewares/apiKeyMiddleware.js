@@ -1,8 +1,4 @@
 function apiKeyMiddleware(req, res, next) {
-  if (req.path === "/reports/networks/cms-auth/callback") {
-    return next();
-  }
-
   const expectedKey = process.env.BACKEND_API_KEY;
 
   if (!expectedKey) {
