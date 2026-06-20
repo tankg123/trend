@@ -631,7 +631,7 @@ export default function ChannelManagementPage() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="grid md:grid-cols-2 xl:grid-cols-7 gap-3">
                 <SelectBox label="Network" value={filters.network_id} onChange={(v) => setFilters({ ...filters, network_id: v })} options={networks.map((n) => ({ value: n.id, label: n.name }))} fallback="All networks" />
-                <SelectBox label="Partner" value={filters.partner_id} onChange={(v) => setFilters({ ...filters, partner_id: v })} options={partners.map((p) => ({ value: p.id, label: p.display_name || p.partner_name }))} fallback="All partners" />
+                <SelectBox searchable label="Partner" value={filters.partner_id} onChange={(v) => setFilters({ ...filters, partner_id: v })} options={partners.map((p) => ({ value: p.id, label: p.display_name || p.partner_name }))} fallback="All partners" searchPlaceholder="Search partner..." />
                 <SelectBox label="Rate Share" value={filters.sharing_id} onChange={(v) => setFilters({ ...filters, sharing_id: v })} options={sharings.map((s) => ({ value: s.id, label: `${s.name} (${s.share_rate}%)` }))} fallback="All rates" />
                 <SelectBox label="Status" value={filters.status} onChange={(v) => setFilters({ ...filters, status: v })} options={[{ value: "active", label: "Active" }, { value: "error", label: "Error" }, { value: "unlinked", label: "Unlinked" }]} fallback="All statuses" />
                 <SelectBox label="Group" value={filters.group_membership} onChange={(v) => setFilters({ ...filters, group_membership: v })} options={[{ value: "in_group", label: "In group" }, { value: "not_in_group", label: "Not in group" }]} fallback="All groups" />
