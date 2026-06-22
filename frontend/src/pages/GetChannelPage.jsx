@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CheckSquare, Copy, Download, Loader2, Search, Square, Video } from "lucide-react";
+import { CheckSquare, Copy, Download, Loader2, Search, Square, Trash2, Video } from "lucide-react";
 import api from "../api/api";
 
 const sampleInput = [
@@ -85,6 +85,18 @@ export default function GetChannelPage() {
   function copySelectedIds() {
     const ids = selectedRows.map((row) => row.channelId).join("\n");
     copyText(ids, `Copied ${selectedRows.length} selected Channel IDs.`);
+  }
+
+  function deleteSelectedRows() {
+    if (!selectedIds.length) {
+      setMessage("No selected channels to delete.");
+      return;
+    }
+
+    const selected = new Set(selectedIds);
+    setRows((current) => current.filter((row) => !selected.has(row.channelId)));
+    setSelectedIds([]);
+    setMessage(`Removed ${selected.size} selected channel(s) from the list.`);
   }
 
   function exportExcel() {
@@ -177,6 +189,15 @@ export default function GetChannelPage() {
               <CheckSquare size={18} />
               Copy Selected
             </button>
+            <button
+              type="button"
+              onClick={deleteSelectedRows}
+              disabled={!selectedIds.length}
+              className="inline-flex items-center gap-2 rounded-2xl border border-red-100 bg-white px-4 py-3 font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Trash2 size={18} />
+              Delete Selected
+            </button>
             <button type="button" onClick={exportExcel} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-700 hover:bg-slate-50">
               <Download size={18} />
               Export Excel
@@ -211,7 +232,14 @@ export default function GetChannelPage() {
               {rows.map((row, index) => {
                 const selected = selectedIds.includes(row.channelId);
                 return (
-                  <tr key={row.channelId} className="border-t border-slate-100 hover:bg-slate-50">
+                  <tr
+                    key={row.channelId}
+                    className={`border-t transition-colors ${
+                      selected
+                        ? "border-blue-100 bg-blue-50 hover:bg-blue-100"
+                        : "border-slate-100 hover:bg-slate-50"
+                    }`}
+                  >
                     <td className="p-4">
                       <button type="button" onClick={() => toggleRow(row.channelId)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-blue-50 hover:text-blue-600">
                         {selected ? <CheckSquare size={18} /> : <Square size={18} />}
