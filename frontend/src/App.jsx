@@ -6,6 +6,7 @@ import Topbar from "./components/Topbar";
 import AccountPage from "./pages/AccountPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import GetChannelPage from "./pages/GetChannelPage";
+import GetYoutubeTrendingVideosPage from "./pages/GetYoutubeTrendingVideosPage";
 import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
@@ -111,6 +112,7 @@ function PrivateLayout() {
           <Route path="/home" element={<HomePage />} />
           <Route path="/trend-youtube" element={<TrendYoutubePage />} />
           <Route path="/get-channel" element={<GetChannelPage />} />
+          <Route path="/trending-videos" element={<GetYoutubeTrendingVideosPage />} />
           <Route path="/account" element={canViewAccount ? <AccountPage /> : <Navigate to="/home" replace />} />
           <Route path="/settings" element={<Navigate to="/settings/system" replace />} />
           <Route path="/settings/system" element={canViewSettings ? <SettingsPage /> : <Navigate to="/home" replace />} />

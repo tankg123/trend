@@ -286,6 +286,82 @@ exports.getChannelsByKeyword = async (req, res) => {
   }
 };
 
+exports.getTrendingVideos = async (req, res) => {
+  try {
+    const regionCode = String(req.query.regionCode || "").trim().toUpperCase();
+    const categoryId = String(req.query.categoryId || "").trim();
+    const maxResults = Math.max(1, Math.min(200, Number(req.query.maxResults || 50)));
+
+    if (!regionCode || !/^[A-Z]{2}$/.test(regionCode)) {
+      return res.status(400).json({ success: false, message: "A valid country code is required, e.g. VN or US." });
+    }
+
+    const rows = [];
+    let nextPageToken = "";
+    let guard = 0;
+
+    while (rows.length < maxResults && guard < 8) {
+      guard += 1;
+      const remaining = maxResults - rows.length;
+      const videosData = await youtubeGet("/videos", {
+        part: "snippet,statistics,contentDetails",
+        chart: "mostPopular",
+        regionCode,
+        maxResults: Math.min(50, remaining),
+        ...(categoryId ? { videoCategoryId: categoryId } : {}),
+        ...(nextPageToken ? { pageToken: nextPageToken } : {})
+      });
+
+      for (const video of videosData.items || []) {
+        const duration = formatISODuration(video.contentDetails?.duration);
+        const durationParts = duration.split(":").map(Number);
+        const durationSeconds = durationParts.length === 3
+          ? durationParts[0] * 3600 + durationParts[1] * 60 + durationParts[2]
+          : durationParts[0] * 60 + durationParts[1];
+
+        rows.push({
+          videoId: video.id,
+          videoTitle: video.snippet?.title || "",
+          channelTitle: video.snippet?.channelTitle || "",
+          channelId: video.snippet?.channelId || "",
+          thumbnailUrl:
+            video.snippet?.thumbnails?.medium?.url ||
+            video.snippet?.thumbnails?.high?.url ||
+            video.snippet?.thumbnails?.default?.url ||
+            "",
+          publishedAt: video.snippet?.publishedAt || "",
+          duration,
+          durationSeconds,
+          viewCount: Number(video.statistics?.viewCount || 0),
+          likeCount: Number(video.statistics?.likeCount || 0),
+          commentCount: Number(video.statistics?.commentCount || 0),
+          videoUrl: `https://www.youtube.com/watch?v=${video.id}`,
+          channelUrl: `https://www.youtube.com/channel/${video.snippet?.channelId || ""}`
+        });
+      }
+
+      nextPageToken = videosData.nextPageToken || "";
+      if (!nextPageToken) break;
+    }
+
+    res.json({
+      success: true,
+      data: rows.slice(0, maxResults),
+      meta: {
+        regionCode,
+        categoryId,
+        requested: maxResults,
+        returned: rows.length
+      }
+    });
+  } catch (error) {
+    res.status(error.statusCode || error.response?.status || 500).json({
+      success: false,
+      message: error.response?.data?.error?.message || error.message || "Could not fetch trending videos"
+    });
+  }
+};
+
 exports.getChannelsFromInputs = async (req, res) => {
   try {
     const rawInputs = Array.isArray(req.body?.inputs)
