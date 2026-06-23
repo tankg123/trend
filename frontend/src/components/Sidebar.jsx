@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Home, MoreHorizontal, Settings, TrendingUp, UserRound, Video } from "lucide-react";
+import { Home, Languages, MoreHorizontal, Settings, TrendingUp, UserRound, Video } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../context/I18nContext";
 import { useTheme } from "../context/ThemeContext";
@@ -24,6 +24,7 @@ export default function Sidebar() {
     { name: "Trend Youtube", path: "/trend-youtube", icon: TrendingUp, show: true },
     { name: "Get Channel", path: "/get-channel", icon: Video, show: true },
     { name: "Trending Videos", path: "/trending-videos", icon: TrendingUp, show: true },
+    { name: "Translate", path: "/translate", icon: Languages, show: true },
     { name: t("account"), path: "/account", icon: UserRound, show: canViewAccount },
     { name: t("settings"), path: "/settings/system", icon: Settings, show: canViewSettings }
   ].filter((item) => item.show);

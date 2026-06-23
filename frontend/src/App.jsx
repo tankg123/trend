@@ -11,6 +11,7 @@ import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import SettingsPage from "./pages/SettingsPage";
+import TranslatePage from "./pages/TranslatePage";
 import TrendYoutubePage from "./pages/TrendYoutubePage";
 import VerifyEmailPage from "./pages/VerifyEmailPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -113,6 +114,7 @@ function PrivateLayout() {
           <Route path="/trend-youtube" element={<TrendYoutubePage />} />
           <Route path="/get-channel" element={<GetChannelPage />} />
           <Route path="/trending-videos" element={<GetYoutubeTrendingVideosPage />} />
+          <Route path="/translate" element={<TranslatePage />} />
           <Route path="/account" element={canViewAccount ? <AccountPage /> : <Navigate to="/home" replace />} />
           <Route path="/settings" element={<Navigate to="/settings/system" replace />} />
           <Route path="/settings/system" element={canViewSettings ? <SettingsPage /> : <Navigate to="/home" replace />} />

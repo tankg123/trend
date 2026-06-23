@@ -10,6 +10,7 @@ require("./config/database");
 
 const authRoutes = require("./routes/authRoutes");
 const settingsRoutes = require("./routes/settingsRoutes");
+const translateRoutes = require("./routes/translateRoutes");
 const youtubeTrendRoutes = require("./routes/youtubeTrendRoutes");
 const apiKeyMiddleware = require("./middlewares/apiKeyMiddleware");
 
@@ -55,6 +56,7 @@ app.get("/api/health", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/translate", translateRoutes);
 app.use("/api/youtube-trend", youtubeTrendRoutes);
 
 app.use((req, res) => {

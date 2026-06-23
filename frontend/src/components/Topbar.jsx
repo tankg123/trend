@@ -63,6 +63,7 @@ export default function Topbar() {
     { name: "Trend Youtube", path: "/trend-youtube", icon: TrendingUp, show: true },
     { name: "Get Channel", path: "/get-channel", icon: Video, show: true },
     { name: "Trending Videos", path: "/trending-videos", icon: TrendingUp, show: true },
+    { name: "Translate", path: "/translate", icon: Languages, show: true },
     { name: t("account"), path: "/account", icon: UserRound, show: canViewAccount },
     { name: t("settings"), path: "/settings/system", icon: Settings, show: canViewSettings }
   ].filter((item) => item.show);
