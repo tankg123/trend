@@ -354,6 +354,7 @@ export default function GetChannelPage() {
                               <span>Sub: {row.hiddenSubscriberCount ? "Hidden" : compactNumber(row.subscriberCount)}</span>
                               <span>Videos: {compactNumber(row.channelVideoCount)}</span>
                               <span>Total views: {compactNumber(row.channelViewCount)}</span>
+                              <span>Created: {formatDate(row.channelPublishedAt) || "-"}</span>
                             </div>
                           </div>
                         </div>
