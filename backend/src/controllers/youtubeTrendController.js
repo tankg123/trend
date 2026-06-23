@@ -79,6 +79,26 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+async function mapLimit(items, limit, iterator) {
+  const results = [];
+  const executing = new Set();
+
+  for (const item of items) {
+    const promise = Promise.resolve().then(() => iterator(item));
+    results.push(promise);
+    executing.add(promise);
+
+    const cleanup = () => executing.delete(promise);
+    promise.then(cleanup, cleanup);
+
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+
+  return Promise.all(results);
+}
+
 function channelPayload(item, sourceInputs = []) {
   return {
     channelId: item.id,
@@ -96,7 +116,9 @@ function channelPayload(item, sourceInputs = []) {
     channelVideoCount: Number(item.statistics?.videoCount || 0),
     channelViewCount: Number(item.statistics?.viewCount || 0),
     channelUrl: `https://www.youtube.com/channel/${item.id}`,
-    sourceInputs
+    sourceInputs,
+    latestVideos: [],
+    latestVideosError: ""
   };
 }
 
@@ -364,6 +386,7 @@ exports.getTrendingVideos = async (req, res) => {
 
 exports.getChannelsFromInputs = async (req, res) => {
   try {
+    const includeLastVideos = Boolean(req.body?.includeLastVideos || req.body?.withLastVideos);
     const rawInputs = Array.isArray(req.body?.inputs)
       ? req.body.inputs
       : String(req.body?.inputs || req.body?.text || "")
@@ -453,15 +476,19 @@ exports.getChannelsFromInputs = async (req, res) => {
     const allChannelIds = unique([...channelIds, ...handleChannelIds]);
     const channels = [];
     const foundChannelIds = new Set();
+    const uploadPlaylistByChannelId = new Map();
 
     for (const batch of chunk(allChannelIds, 50)) {
       const channelsData = await youtubeGet("/channels", {
-        part: "snippet,statistics",
+        part: includeLastVideos ? "snippet,statistics,contentDetails" : "snippet,statistics",
         id: batch.join(",")
       });
 
       for (const channel of channelsData.items || []) {
         foundChannelIds.add(channel.id);
+        if (includeLastVideos && channel.contentDetails?.relatedPlaylists?.uploads) {
+          uploadPlaylistByChannelId.set(channel.id, channel.contentDetails.relatedPlaylists.uploads);
+        }
         channels.push(channelPayload(channel, inputSourcesByChannelId.get(channel.id) || []));
       }
     }
@@ -472,6 +499,46 @@ exports.getChannelsFromInputs = async (req, res) => {
 
     channels.sort((a, b) => a.channelTitle.localeCompare(b.channelTitle, undefined, { sensitivity: "base", numeric: true }));
 
+    if (includeLastVideos) {
+      await mapLimit(channels, 5, async (channel) => {
+        const playlistId = uploadPlaylistByChannelId.get(channel.channelId);
+        if (!playlistId) {
+          channel.latestVideosError = "Uploads playlist not available";
+          return;
+        }
+
+        try {
+          const playlistData = await youtubeGet("/playlistItems", {
+            part: "snippet,contentDetails",
+            playlistId,
+            maxResults: 2
+          });
+
+          channel.latestVideos = (playlistData.items || []).map((item) => {
+            const videoId = item.contentDetails?.videoId || item.snippet?.resourceId?.videoId || "";
+            return {
+              videoId,
+              videoTitle: item.snippet?.title || "",
+              thumbnailUrl:
+                item.snippet?.thumbnails?.medium?.url ||
+                item.snippet?.thumbnails?.high?.url ||
+                item.snippet?.thumbnails?.default?.url ||
+                "",
+              publishedAt: item.contentDetails?.videoPublishedAt || item.snippet?.publishedAt || "",
+              videoUrl: videoId ? `https://www.youtube.com/watch?v=${videoId}` : ""
+            };
+          });
+        } catch (error) {
+          channel.latestVideos = [];
+          channel.latestVideosError = error.response?.data?.error?.message || error.message || "Could not fetch latest videos";
+        }
+      });
+    }
+
+    const latestVideoErrors = includeLastVideos
+      ? channels.filter((channel) => channel.latestVideosError).length
+      : 0;
+
     res.json({
       success: true,
       data: channels,
@@ -479,7 +546,9 @@ exports.getChannelsFromInputs = async (req, res) => {
       meta: {
         inputs: parsedInputs.length,
         returned: channels.length,
-        unresolved: unresolved.length
+        unresolved: unresolved.length,
+        includeLastVideos,
+        latestVideoErrors
       }
     });
   } catch (error) {

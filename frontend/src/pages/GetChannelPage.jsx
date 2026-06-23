@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CheckSquare, Copy, Download, Loader2, Search, Square, Trash2, Video } from "lucide-react";
+import { ArrowDownAZ, ArrowDownZA, CheckSquare, Copy, Download, Loader2, Search, Square, Trash2, Video } from "lucide-react";
 import api from "../api/api";
 
 const sampleInput = [
@@ -13,6 +13,11 @@ const sampleInput = [
 function compactNumber(value) {
   if (value === null || value === undefined || value === "") return "-";
   return Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value || 0));
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleDateString();
 }
 
 function csvEscape(value) {
@@ -36,8 +41,26 @@ export default function GetChannelPage() {
   const [rows, setRows] = useState([]);
   const [unresolved, setUnresolved] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [uploadSort, setUploadSort] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+
+  const sortedRows = useMemo(() => {
+    const nextRows = [...rows];
+    if (!uploadSort) return nextRows;
+
+    nextRows.sort((a, b) => {
+      const timeA = new Date(a.latestVideos?.[0]?.publishedAt || 0).getTime();
+      const timeB = new Date(b.latestVideos?.[0]?.publishedAt || 0).getTime();
+
+      if (!timeA && !timeB) return a.channelTitle.localeCompare(b.channelTitle, undefined, { sensitivity: "base", numeric: true });
+      if (!timeA) return 1;
+      if (!timeB) return -1;
+      return uploadSort === "asc" ? timeA - timeB : timeB - timeA;
+    });
+
+    return nextRows;
+  }, [rows, uploadSort]);
 
   const selectedRows = useMemo(() => {
     const selected = new Set(selectedIds);
@@ -56,6 +79,10 @@ export default function GetChannelPage() {
         ? current.filter((id) => id !== channelId)
         : [...current, channelId]
     ));
+  }
+
+  function toggleUploadSort() {
+    setUploadSort((current) => (current === "desc" ? "asc" : "desc"));
   }
 
   async function copyText(text, successMessage, filename = "channel_ids.txt") {
@@ -106,7 +133,23 @@ export default function GetChannelPage() {
       return;
     }
 
-    const header = ["#", "Channel Name", "Channel ID", "Subscribers", "Videos", "Total Views", "Channel URL", "Avatar URL", "Source Inputs"];
+    const header = [
+      "#",
+      "Channel Name",
+      "Channel ID",
+      "Subscribers",
+      "Videos",
+      "Total Views",
+      "Channel URL",
+      "Avatar URL",
+      "Source Inputs",
+      "Last Video 1 Title",
+      "Last Video 1 URL",
+      "Last Video 1 Published At",
+      "Last Video 2 Title",
+      "Last Video 2 URL",
+      "Last Video 2 Published At"
+    ];
     const lines = exportRows.map((row, index) => [
       index + 1,
       row.channelTitle,
@@ -116,7 +159,13 @@ export default function GetChannelPage() {
       row.channelViewCount ?? "",
       row.channelUrl,
       row.channelAvatarUrl,
-      (row.sourceInputs || []).join(" | ")
+      (row.sourceInputs || []).join(" | "),
+      row.latestVideos?.[0]?.videoTitle || "",
+      row.latestVideos?.[0]?.videoUrl || "",
+      formatDate(row.latestVideos?.[0]?.publishedAt),
+      row.latestVideos?.[1]?.videoTitle || "",
+      row.latestVideos?.[1]?.videoUrl || "",
+      formatDate(row.latestVideos?.[1]?.publishedAt)
     ]);
 
     const csv = [header, ...lines].map((line) => line.map(csvEscape).join(",")).join("\r\n");
@@ -124,8 +173,8 @@ export default function GetChannelPage() {
     setMessage(`Exported ${exportRows.length} channel(s).`);
   }
 
-  async function fetchChannels(event) {
-    event.preventDefault();
+  async function fetchChannels(event, includeLastVideos = false) {
+    event?.preventDefault();
     const cleanInputs = inputs.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (!cleanInputs.length) {
       setMessage("Please enter at least one channel or video link.");
@@ -138,14 +187,20 @@ export default function GetChannelPage() {
       setRows([]);
       setUnresolved([]);
       setSelectedIds([]);
+      setUploadSort("");
 
-      const response = await api.post("/youtube-trend/channels", { inputs: cleanInputs }, { timeout: 120000 });
+      const response = await api.post("/youtube-trend/channels", { inputs: cleanInputs, includeLastVideos }, { timeout: 300000 });
       const nextRows = response.data.data || [];
       const nextUnresolved = response.data.unresolved || [];
+      const latestVideoErrors = Number(response.data.meta?.latestVideoErrors || 0);
 
       setRows(nextRows);
       setUnresolved(nextUnresolved);
-      setMessage(`Found ${nextRows.length} channel(s)${nextUnresolved.length ? `, ${nextUnresolved.length} unresolved input(s).` : "."}`);
+      setMessage(
+        `Found ${nextRows.length} channel(s)${includeLastVideos ? " with last videos" : ""}` +
+        `${nextUnresolved.length ? `, ${nextUnresolved.length} unresolved input(s)` : ""}` +
+        `${latestVideoErrors ? `, ${latestVideoErrors} channel(s) without last videos` : ""}.`
+      );
     } catch (error) {
       setMessage(error.response?.data?.message || "Could not fetch channels.");
     } finally {
@@ -165,7 +220,7 @@ export default function GetChannelPage() {
       </div>
 
       <section className="mb-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-        <form onSubmit={fetchChannels} className="space-y-4">
+        <form onSubmit={(event) => fetchChannels(event, false)} className="space-y-4">
           <label className="block">
             <span className="text-sm font-black text-slate-700">Channel inputs</span>
             <textarea
@@ -181,6 +236,15 @@ export default function GetChannelPage() {
               {loading ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}
               Get Channels
             </button>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => fetchChannels(null, true)}
+              className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white hover:bg-emerald-700 disabled:opacity-60"
+            >
+              {loading ? <Loader2 className="animate-spin" size={18} /> : <Video size={18} />}
+              Get Channels & Last Videos
+            </button>
             <button type="button" onClick={copyAllIds} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-700 hover:bg-slate-50">
               <Copy size={18} />
               Copy All Channel IDs
@@ -188,6 +252,15 @@ export default function GetChannelPage() {
             <button type="button" onClick={copySelectedIds} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-700 hover:bg-slate-50">
               <CheckSquare size={18} />
               Copy Selected
+            </button>
+            <button
+              type="button"
+              onClick={toggleUploadSort}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-700 hover:bg-slate-50"
+              title="Sort by latest video upload time"
+            >
+              {uploadSort === "asc" ? <ArrowDownAZ size={18} /> : <ArrowDownZA size={18} />}
+              Last Video {uploadSort === "asc" ? "A-Z" : "Z-A"}
             </button>
             <button
               type="button"
@@ -229,7 +302,7 @@ export default function GetChannelPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, index) => {
+              {sortedRows.map((row, index) => {
                 const selected = selectedIds.includes(row.channelId);
                 return (
                   <tr
@@ -247,48 +320,77 @@ export default function GetChannelPage() {
                     </td>
                     <td className="p-4 font-bold text-slate-700">{index + 1}</td>
                     <td className="p-4">
-                      <div className="flex min-w-[520px] items-center gap-4">
-                        <a
-                          href={row.channelUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100"
-                          title="Open channel"
-                        >
-                          {row.channelAvatarUrl ? (
-                            <img src={row.channelAvatarUrl} alt={row.channelTitle || "Channel avatar"} className="h-full w-full object-cover" loading="lazy" />
-                          ) : (
-                            <span className="text-lg font-black text-slate-400">{(row.channelTitle || "?").charAt(0).toUpperCase()}</span>
-                          )}
-                        </a>
-                        <div className="min-w-0">
-                          <a href={row.channelUrl} target="_blank" rel="noreferrer" className="block truncate text-lg font-black text-slate-950 hover:text-blue-600" title={row.channelTitle}>
-                            {row.channelTitle || "-"}
+                      <div className="flex min-w-[760px] flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="flex min-w-[520px] items-center gap-4">
+                          <a
+                            href={row.channelUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100"
+                            title="Open channel"
+                          >
+                            {row.channelAvatarUrl ? (
+                              <img src={row.channelAvatarUrl} alt={row.channelTitle || "Channel avatar"} className="h-full w-full object-cover" loading="lazy" />
+                            ) : (
+                              <span className="text-lg font-black text-slate-400">{(row.channelTitle || "?").charAt(0).toUpperCase()}</span>
+                            )}
                           </a>
-                          <div className="mt-1 flex max-w-[420px] items-center gap-2">
-                            <span className="truncate text-xs font-semibold text-slate-400" title={row.channelId}>{row.channelId}</span>
-                            <button
-                              type="button"
-                              onClick={() => copyOne(row.channelId)}
-                              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
-                              title="Copy Channel ID"
-                            >
-                              <Copy size={13} />
-                            </button>
-                          </div>
-                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-bold text-slate-500">
-                            <span>Sub: {row.hiddenSubscriberCount ? "Hidden" : compactNumber(row.subscriberCount)}</span>
-                            <span>Videos: {compactNumber(row.channelVideoCount)}</span>
-                            <span>Total views: {compactNumber(row.channelViewCount)}</span>
+                          <div className="min-w-0">
+                            <a href={row.channelUrl} target="_blank" rel="noreferrer" className="block truncate text-lg font-black text-slate-950 hover:text-blue-600" title={row.channelTitle}>
+                              {row.channelTitle || "-"}
+                            </a>
+                            <div className="mt-1 flex max-w-[420px] items-center gap-2">
+                              <span className="truncate text-xs font-semibold text-slate-400" title={row.channelId}>{row.channelId}</span>
+                              <button
+                                type="button"
+                                onClick={() => copyOne(row.channelId)}
+                                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
+                                title="Copy Channel ID"
+                              >
+                                <Copy size={13} />
+                              </button>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-bold text-slate-500">
+                              <span>Sub: {row.hiddenSubscriberCount ? "Hidden" : compactNumber(row.subscriberCount)}</span>
+                              <span>Videos: {compactNumber(row.channelVideoCount)}</span>
+                              <span>Total views: {compactNumber(row.channelViewCount)}</span>
+                            </div>
                           </div>
                         </div>
+
+                        {row.latestVideos?.length > 0 && (
+                          <div className="grid min-w-[520px] max-w-[640px] grid-cols-1 gap-3 md:grid-cols-2">
+                            {row.latestVideos.slice(0, 2).map((video) => (
+                              <a
+                                key={video.videoId}
+                                href={video.videoUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-2 hover:border-blue-200 hover:bg-blue-50"
+                                title={video.videoTitle}
+                              >
+                                <span className="block w-28 shrink-0 overflow-hidden rounded-xl bg-slate-100">
+                                  {video.thumbnailUrl ? (
+                                    <img src={video.thumbnailUrl} alt={video.videoTitle || "Latest video thumbnail"} className="aspect-video w-full object-cover" loading="lazy" />
+                                  ) : (
+                                    <span className="flex aspect-video w-full items-center justify-center text-[11px] font-bold text-slate-400">No image</span>
+                                  )}
+                                </span>
+                                <span className="min-w-0">
+                                  <span className="line-clamp-2 text-sm font-black leading-5 text-slate-900 group-hover:text-blue-600">{video.videoTitle || "-"}</span>
+                                  <span className="mt-1 block text-xs font-bold text-slate-400">{formatDate(video.publishedAt)}</span>
+                                </span>
+                              </a>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
                 );
               })}
 
-              {!rows.length && (
+              {!sortedRows.length && (
                 <tr>
                   <td colSpan="3" className="p-10 text-center font-medium text-slate-500">
                     Paste inputs and click Get Channels.
