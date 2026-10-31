@@ -58,6 +58,22 @@ function authMiddleware(req, res, next) {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+    if (decoded.guest === true) {
+      const guestPaths = new Set([
+        "GET /api/auth/me",
+        "GET /api/youtube-trend/keyword",
+        "GET /api/youtube-trend/trending-videos",
+        "POST /api/youtube-trend/channels",
+        "POST /api/translate/text",
+        "POST /api/translate/image"
+      ]);
+      if (!guestPaths.has(`${req.method} ${req.originalUrl.split("?")[0]}`)) {
+        return res.status(403).json({ success: false, message: "Guest sessions can only access tools." });
+      }
+      req.user = { id: null, full_name: "Guest", role: "user", roles: ["user"], status: "active", is_guest: true };
+      return next();
+    }
+
     const user = db
       .prepare(`
         SELECT id, full_name, first_name, last_name, email, role, status, email_verified, email_verified_at,

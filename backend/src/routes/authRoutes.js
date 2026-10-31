@@ -7,6 +7,12 @@ const {
   allowRoles
 } = require("../middlewares/authMiddleware");
 
+router.post("/guest", (req, res) => {
+  const jwt = require("jsonwebtoken");
+  const token = jwt.sign({ guest: true }, process.env.JWT_SECRET, { expiresIn: "24h" });
+  res.json({ success: true, token, user: { id: null, full_name: "Guest", role: "user", roles: ["user"], status: "active", is_guest: true } });
+});
+
 router.post("/register", authController.register);
 router.post("/login", authController.login);
 router.post("/verify-email", authController.verifyEmail);
