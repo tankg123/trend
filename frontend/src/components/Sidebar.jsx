@@ -5,8 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../context/I18nContext";
 import { useTheme } from "../context/ThemeContext";
 import { useSystemSettings } from "../context/SystemSettingsContext";
-
-const logoColors = ["#2f8ccf", "#0f9f6e", "#7c3aed", "#ef4444", "#f59e0b", "#0891b2", "#db2777"];
+import BrandLogo from "./BrandLogo";
 
 export default function Sidebar() {
   const location = useLocation();
@@ -15,8 +14,6 @@ export default function Sidebar() {
   const { theme } = useTheme();
   const { settings } = useSystemSettings();
   const isDark = theme === "dark";
-  const useUploadedLogo = settings.logo_mode === "upload" && settings.logo_data_url;
-  const [logoColor] = useState(() => logoColors[Math.floor(Math.random() * logoColors.length)]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("sidebarCollapsed") === "1");
 
   const menus = [
@@ -57,20 +54,13 @@ export default function Sidebar() {
       </button>
 
       <div className={["px-5 pt-5 pb-4 text-center shrink-0", sidebarCollapsed ? "px-3 pt-12" : ""].join(" ")}>
-        <div
+        <BrandLogo
           className={[
             "mx-auto rounded-full flex items-center justify-center shadow-lg shadow-slate-950/25 overflow-hidden ring-4 transition-all",
             sidebarCollapsed ? "w-12 h-12" : "w-28 h-28",
             isDark ? "ring-white/10" : "ring-slate-100"
           ].join(" ")}
-          style={{ backgroundColor: useUploadedLogo ? "transparent" : logoColor }}
-        >
-          <img
-            src={useUploadedLogo ? settings.logo_data_url : "https://revenue.ansnetwork.vn/images/logo-slideBar.png"}
-            alt={settings.brand_name || "ANS Network"}
-            className={useUploadedLogo ? "w-full h-full object-cover" : "w-16 h-16 object-contain"}
-          />
-        </div>
+        />
 
         {!sidebarCollapsed && (
           <>

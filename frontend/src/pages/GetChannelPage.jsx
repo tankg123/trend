@@ -114,6 +114,11 @@ export default function GetChannelPage() {
     copyText(ids, `Copied ${selectedRows.length} selected Channel IDs.`);
   }
 
+  function copySelectedNames() {
+    const names = sortedRows.filter((row) => selectedIds.includes(row.channelId)).map((row) => row.channelTitle || "").join("\n");
+    copyText(names, `Copied ${selectedIds.length} selected Channel names.`, "channel_names.txt");
+  }
+
   function deleteSelectedRows() {
     if (!selectedIds.length) {
       setMessage("No selected channels to delete.");
@@ -253,6 +258,12 @@ export default function GetChannelPage() {
               <CheckSquare size={18} />
               Copy Selected
             </button>
+            {selectedIds.length > 0 && (
+              <button type="button" onClick={copySelectedNames} className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-700 hover:bg-slate-50">
+                <Copy size={18} />
+                Copy Channel name ({selectedIds.length})
+              </button>
+            )}
             <button
               type="button"
               onClick={toggleUploadSort}
@@ -336,9 +347,14 @@ export default function GetChannelPage() {
                             )}
                           </a>
                           <div className="min-w-0">
-                            <a href={row.channelUrl} target="_blank" rel="noreferrer" className="block truncate text-lg font-black text-slate-950 hover:text-blue-600" title={row.channelTitle}>
-                              {row.channelTitle || "-"}
-                            </a>
+                            <div className="flex max-w-[420px] items-center gap-2">
+                              <a href={row.channelUrl} target="_blank" rel="noreferrer" className="truncate text-lg font-black text-slate-950 hover:text-blue-600" title={row.channelTitle}>
+                                {row.channelTitle || "-"}
+                              </a>
+                              <button type="button" onClick={() => copyText(row.channelTitle, `Copied Channel name: ${row.channelTitle}`, "channel_name.txt")} title="Copy Channel name" aria-label="Copy Channel name" className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600">
+                                <Copy size={13} />
+                              </button>
+                            </div>
                             <div className="mt-1 flex max-w-[420px] items-center gap-2">
                               <span className="truncate text-xs font-semibold text-slate-400" title={row.channelId}>{row.channelId}</span>
                               <button

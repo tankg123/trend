@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../context/I18nContext";
 import { useTheme } from "../context/ThemeContext";
 import { useSystemSettings } from "../context/SystemSettingsContext";
+import BrandLogo from "./BrandLogo";
 
 const avatarColors = ["#2563eb", "#059669", "#7c3aed", "#dc2626", "#d97706", "#0891b2", "#be185d"];
 
@@ -55,7 +56,6 @@ export default function Topbar() {
   const [twoFactorForm, setTwoFactorForm] = useState({ code: "", password: "" });
   const [showPasswords, setShowPasswords] = useState({});
   const avatarColor = useMemo(() => randomColor(), []);
-  const useUploadedLogo = settings?.logo_mode === "upload" && settings?.logo_data_url;
   const brandName = settings?.brand_name || "ANS Network";
   const subtitle = settings?.brand_subtitle || "MCN Manager System";
   const mobileItems = [
@@ -184,9 +184,7 @@ export default function Topbar() {
     <>
       <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur lg:px-5">
         <div className="flex min-w-0 items-center gap-3 lg:hidden">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white">
-            <img src={useUploadedLogo ? settings.logo_data_url : "https://revenue.ansnetwork.vn/images/logo-slideBar.png"} alt={brandName} className={useUploadedLogo ? "h-full w-full object-cover" : "h-6 w-6 object-contain"} />
-          </div>
+          <BrandLogo className="h-9 w-9 border border-slate-200" />
           <div className="min-w-0">
             <p className="truncate text-sm font-black text-slate-950">{brandName}</p>
             <p className="truncate text-[11px] font-bold text-slate-500">{subtitle}</p>
@@ -229,7 +227,7 @@ export default function Topbar() {
           {mobileMenuOpen && (
             <div className="absolute right-0 top-12 z-50 max-h-[calc(100vh-76px)] w-[calc(100vw-1.5rem)] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-3 shadow-2xl lg:hidden">
               <div className="mb-3 flex items-center gap-3 rounded-2xl bg-slate-50 p-3">
-                <img src={useUploadedLogo ? settings.logo_data_url : "https://revenue.ansnetwork.vn/images/logo-slideBar.png"} alt={brandName} className="h-9 w-9 rounded-full object-cover" />
+                <BrandLogo className="h-9 w-9" />
                 <div className="min-w-0">
                   <p className="truncate font-black text-slate-950">{brandName}</p>
                   <p className="truncate text-xs font-bold text-slate-500">{subtitle}</p>
@@ -283,6 +281,7 @@ export default function Topbar() {
                   </button>
                 </div>
               </div>
+              {!user?.is_guest && <>
               <button type="button" onClick={openSettings} className="flex w-full items-center gap-2 px-4 py-3 text-left font-bold text-slate-700 hover:bg-slate-50">
                 <Settings size={16} /> Profile settings
               </button>
@@ -292,6 +291,7 @@ export default function Topbar() {
               <button type="button" onClick={openTwoFactorModal} className="flex w-full items-center gap-2 px-4 py-3 text-left font-bold text-slate-700 hover:bg-slate-50">
                 <ShieldCheck size={16} /> Two-factor authentication
               </button>
+              </>}
               <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 px-4 py-3 text-left font-bold text-red-600 hover:bg-red-50">
                 <LogOut size={16} /> Logout
               </button>

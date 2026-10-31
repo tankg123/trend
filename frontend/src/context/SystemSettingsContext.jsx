@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import api from "../api/api";
 
 const SystemSettingsContext = createContext(null);
+const logoColors = ["#b11972", "#2f8ccf", "#0f9f6e", "#7c3aed", "#ef4444", "#f59e0b", "#0891b2"];
 
 export const defaultSystemSettings = {
   brand_name: "ANS Network",
@@ -25,6 +26,7 @@ function ensureFaviconLink() {
 
 export function SystemSettingsProvider({ children }) {
   const [settings, setSettings] = useState(defaultSystemSettings);
+  const [logoColor] = useState(() => logoColors[Math.floor(Math.random() * logoColors.length)]);
   const [loading, setLoading] = useState(true);
 
   async function refreshSettings() {
@@ -52,11 +54,12 @@ export function SystemSettingsProvider({ children }) {
   const value = useMemo(
     () => ({
       settings,
+      logoColor,
       loading,
       setSettings,
       refreshSettings
     }),
-    [settings, loading]
+    [settings, loading, logoColor]
   );
 
   return <SystemSettingsContext.Provider value={value}>{children}</SystemSettingsContext.Provider>;

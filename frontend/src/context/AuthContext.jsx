@@ -1,8 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import axios from "axios";
+import api from "../api/api";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4125/api";
-const BACKEND_API_KEY = import.meta.env.VITE_BACKEND_API_KEY || "";
 
 const AuthContext = createContext(null);
 const SUPER_ADMIN_ROLES = ["supper admin", "super admin"];
@@ -118,12 +116,7 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      const res = await axios.get(`${API_URL}/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${savedToken}`,
-          "x-api-key": BACKEND_API_KEY
-        }
-      });
+      const res = await api.get("/auth/me");
 
       localStorage.setItem("user", JSON.stringify(res.data.user));
       localStorage.setItem("token_expires_at", String(getTokenExpiryMs(savedToken) || ""));

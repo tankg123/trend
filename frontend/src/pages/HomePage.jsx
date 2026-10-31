@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { BarChart3, CircleDollarSign, Disc3, FileSpreadsheet, Headphones, Mail, Music2, Network, Sparkles, UsersRound, WalletCards } from "lucide-react";
 import { useSystemSettings } from "../context/SystemSettingsContext";
+import BrandLogo from "../components/BrandLogo";
 
 const featureCards = [
   {
@@ -33,23 +34,13 @@ export default function HomePage({ publicView = false }) {
   const { settings } = useSystemSettings();
   const brandName = settings?.brand_name || "ANS Network";
   const subtitle = settings?.brand_subtitle || "MCN Manager System";
-  const logoSrc = settings?.logo_data_url
-    ? settings.logo_data_url
-    : "/ans-logo.png";
-  const isUploadedLogo = Boolean(settings?.logo_data_url);
 
   return (
     <div className={`${publicView ? "min-h-screen" : "min-h-[calc(100vh-56px)]"} bg-[radial-gradient(circle_at_top_left,#dcfce7,transparent_32%),radial-gradient(circle_at_bottom_right,#dbeafe,transparent_34%),#f3f6fb] p-4 lg:p-8`}>
       {publicView && (
         <header className="mx-auto mb-5 flex max-w-7xl items-center justify-between rounded-[28px] border border-white/80 bg-white/90 px-5 py-4 shadow-sm backdrop-blur">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
-              <img
-                src={logoSrc}
-                alt={brandName}
-                className={isUploadedLogo ? "h-full w-full object-cover" : "h-full w-full object-contain p-1.5"}
-              />
-            </div>
+            <BrandLogo className="h-12 w-12 shadow-sm ring-1 ring-slate-100" />
             <div className="min-w-0">
               <p className="truncate text-lg font-black text-slate-950">{brandName}</p>
               <p className="truncate text-sm font-bold text-slate-500">{subtitle}</p>
@@ -85,7 +76,7 @@ export default function HomePage({ publicView = false }) {
                 <div key={label} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                   <Icon className="mb-4 text-emerald-600" size={24} />
                   <p className="text-xs font-black uppercase tracking-wider text-slate-400">{label}</p>
-                  <p className="mt-1 text-2xl font-black text-slate-950">{value}</p>
+                  <p className="mt-1 text-2xl font-black text-slate-950">{value === "Ready" ? <Link to="/vip">{value}</Link> : value}</p>
                 </div>
               ))}
             </div>
@@ -116,7 +107,7 @@ export default function HomePage({ publicView = false }) {
                       <p className="text-xs font-black uppercase tracking-wider text-slate-300">{label}</p>
                       <p className="truncate text-lg font-black">{name}</p>
                     </div>
-                    <p className="text-xl font-black text-emerald-200">{value}</p>
+                    <p className="text-xl font-black text-emerald-200">{value === "Ready" ? <Link to="/vip">{value}</Link> : value}</p>
                   </div>
                 </div>
               ))}

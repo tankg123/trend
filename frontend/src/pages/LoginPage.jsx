@@ -4,6 +4,7 @@ import { LockKeyhole, Mail, Loader2, ShieldCheck } from "lucide-react";
 import api from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { useSystemSettings } from "../context/SystemSettingsContext";
+import BrandLogo from "../components/BrandLogo";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -78,13 +79,7 @@ export default function LoginPage() {
       <div className="w-full max-w-[1100px] grid grid-cols-1 lg:grid-cols-2 bg-white rounded-[32px] shadow-2xl overflow-hidden border border-slate-200">
         <div className="hidden lg:flex bg-[#0f172a] text-white p-12 flex-col justify-center">
           <div>
-            <div className="w-20 h-20 rounded-3xl bg-white flex items-center justify-center shadow-lg shadow-slate-950/30 mb-8 overflow-hidden">
-              <img
-                src={settings.logo_mode === "upload" && settings.logo_data_url ? settings.logo_data_url : "/ans-logo.png"}
-                alt={settings.brand_name || "ANS Network"}
-                className="w-16 h-16 object-contain"
-              />
-            </div>
+            <BrandLogo className="mb-8 h-20 w-20 shadow-lg shadow-slate-950/30" />
 
             <h1 className="text-4xl font-black leading-tight">{settings.brand_name || "ANS Network"}</h1>
 

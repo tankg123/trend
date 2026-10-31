@@ -3,6 +3,7 @@ import { ImageUp, Loader2, MonitorCog, Save, Upload } from "lucide-react";
 import api from "../api/api";
 import { useSystemSettings } from "../context/SystemSettingsContext";
 import { useI18n } from "../context/I18nContext";
+import BrandLogo from "../components/BrandLogo";
 
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -19,7 +20,6 @@ export default function SettingsPage() {
   const [form, setForm] = useState(settings);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const useUploadedLogo = form.logo_mode === "upload" && form.logo_data_url;
 
   useEffect(() => {
     setForm(settings);
@@ -28,7 +28,7 @@ export default function SettingsPage() {
   async function handleFile(field, file) {
     if (!file) return;
     const dataUrl = await fileToDataUrl(file);
-    setForm((current) => ({ ...current, [field]: dataUrl }));
+    setForm((current) => ({ ...current, [field]: dataUrl, ...(field === "logo_data_url" ? { logo_mode: "upload" } : {}) }));
   }
 
   async function saveSettings(event) {
@@ -69,16 +69,7 @@ export default function SettingsPage() {
 
           <div className="grid grid-cols-1 xl:grid-cols-[260px_1fr] gap-6">
             <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 text-center">
-              <div
-                className="mx-auto w-32 h-32 rounded-full flex items-center justify-center overflow-hidden shadow-lg"
-                style={{ backgroundColor: useUploadedLogo ? "transparent" : "#2f8ccf" }}
-              >
-                {useUploadedLogo ? (
-                  <img src={form.logo_data_url} alt="Brand logo" className="w-full h-full object-cover" />
-                ) : (
-                  <img src="https://revenue.ansnetwork.vn/images/logo-slideBar.png" alt="ANS" className="w-20 h-20 object-contain" />
-                )}
-              </div>
+              <BrandLogo settings={form} className="mx-auto h-32 w-32 shadow-lg" />
               <p className="mt-4 font-black text-slate-950">{form.brand_name || "ANS Network"}</p>
               <p className="text-sm font-bold text-slate-500">MCN Manager System</p>
             </div>
@@ -104,7 +95,7 @@ export default function SettingsPage() {
                     className={`rounded-2xl border px-4 py-4 text-left font-black ${form.logo_mode === "random" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-700"}`}
                   >
                     Random color logo
-                    <span className="block mt-1 text-xs font-bold text-slate-500">Use the current random round color.</span>
+                    <span className="block mt-1 text-xs font-bold text-slate-500">White content owner icon on a random round color.</span>
                   </button>
                   <button
                     type="button"

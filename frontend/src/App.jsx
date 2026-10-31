@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import api from "./api/api";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Loader2, LogOut, Mail, ShieldCheck, Sparkles } from "lucide-react";
 
@@ -126,6 +128,30 @@ function PrivateLayout() {
   );
 }
 
+function VipRoute() {
+  const { user, authLoading, saveAuth } = useAuth();
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    if (authLoading || user) return;
+    let cancelled = false;
+    api.post("/auth/guest").then(({ data }) => {
+      if (!cancelled) saveAuth(data.token, data.user);
+    }).catch(() => {
+      if (!cancelled) setError("Could not start guest session. Please try again.");
+    });
+    return () => { cancelled = true; };
+    // Start a guest session only after the existing session has been restored.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLoading, Boolean(user), attempt]);
+
+  if (authLoading) return <LoadingScreen />;
+  if (user) return <Navigate to="/get-channel" replace />;
+  if (error) return <div className="min-h-screen flex flex-col items-center justify-center gap-4"><p>{error}</p><button type="button" onClick={() => { setError(""); setAttempt((value) => value + 1); }} className="rounded-xl bg-blue-600 px-4 py-2 text-white">Try again</button></div>;
+  return <LoadingScreen />;
+}
+
 function PublicRoute({ children }) {
   const { user, authLoading } = useAuth();
 
@@ -159,6 +185,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/" element={<HomeRoute />} />
         <Route path="/home" element={<HomeRoute />} />
+        <Route path="/vip" element={<VipRoute />} />
         <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
         <Route path="/verify-email" element={<PublicRoute><VerifyEmailPage /></PublicRoute>} />
